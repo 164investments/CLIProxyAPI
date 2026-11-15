@@ -18,7 +18,7 @@ func claudeCodeDetectionPayload(userID string) []byte {
 
 func confirmedClaudeCodeHeaders() http.Header {
 	return http.Header{
-		"User-Agent":     {"claude-cli/2.1.280 (external, cli)"},
+		"User-Agent":     {"claude-cli/2.1.325 (external, cli)"},
 		"X-App":          {"cli"},
 		"Anthropic-Beta": {"claude-code-20250219,interleaved-thinking-2025-05-14"},
 	}
@@ -84,7 +84,7 @@ func TestDetectClaudeCodeRequestRequiresAllFourMessageSignals(t *testing.T) {
 
 func TestDetectClaudeCodeRequestAcceptsNewerPatchInMeasuredReleaseLine(t *testing.T) {
 	headers := confirmedClaudeCodeHeaders()
-	headers.Set("User-Agent", "claude-cli/2.1.281 (external, cli)")
+	headers.Set("User-Agent", "claude-cli/2.1.326 (external, cli)")
 	payload := claudeCodeDetectionPayload(validClaudeCodeMetadataUserID)
 
 	detection := DetectClaudeCodeRequest(headers, payload, false)
@@ -93,16 +93,27 @@ func TestDetectClaudeCodeRequestAcceptsNewerPatchInMeasuredReleaseLine(t *testin
 	}
 }
 
-func TestDetectClaudeCodeRequestAcceptsConfiguredMeasuredBaseline(t *testing.T) {
+func TestDetectClaudeCodeRequestAcceptsNewerMinorInMajorLine(t *testing.T) {
 	headers := confirmedClaudeCodeHeaders()
 	headers.Set("User-Agent", "claude-cli/2.2.0 (external, cli)")
 	payload := claudeCodeDetectionPayload(validClaudeCodeMetadataUserID)
+
+	detection := DetectClaudeCodeRequest(headers, payload, false)
+	if !detection.Confirmed || !detection.UserAgent {
+		t.Fatalf("detection = %#v, want newer 2.x native CLI confirmed", detection)
+	}
+}
+
+func TestDetectClaudeCodeRequestAcceptsConfiguredMeasuredBaseline(t *testing.T) {
+	headers := confirmedClaudeCodeHeaders()
+	headers.Set("User-Agent", "claude-cli/3.0.0 (external, cli)")
+	payload := claudeCodeDetectionPayload(validClaudeCodeMetadataUserID)
 	if detection := DetectClaudeCodeRequest(headers, payload, false); detection.Confirmed {
-		t.Fatalf("default detection = %#v, want unconfigured 2.2.0 rejected", detection)
+		t.Fatalf("default detection = %#v, want unconfigured 3.0.0 rejected", detection)
 	}
 
 	cfg := &config.Config{ClaudeHeaderDefaults: config.ClaudeHeaderDefaults{
-		UserAgent:      "claude-cli/2.2.0 (external, cli)",
+		UserAgent:      "claude-cli/3.0.0 (external, cli)",
 		PackageVersion: "0.95.0",
 		RuntimeVersion: "v26.4.0",
 	}}
@@ -118,9 +129,9 @@ func TestDetectClaudeCodeRequestRejectsEachMissingMessageSignal(t *testing.T) {
 		headers http.Header
 		body    []byte
 	}{
-		{name: "x-app", headers: http.Header{"User-Agent": {"claude-cli/2.1.280 (external, cli)"}, "Anthropic-Beta": {"claude-code-20250219"}}, body: payload},
+		{name: "x-app", headers: http.Header{"User-Agent": {"claude-cli/2.1.325 (external, cli)"}, "Anthropic-Beta": {"claude-code-20250219"}}, body: payload},
 		{name: "user-agent", headers: http.Header{"User-Agent": {"curl/8.7.1"}, "X-App": {"cli"}, "Anthropic-Beta": {"claude-code-20250219"}}, body: payload},
-		{name: "betas", headers: http.Header{"User-Agent": {"claude-cli/2.1.280 (external, cli)"}, "X-App": {"cli"}}, body: payload},
+		{name: "betas", headers: http.Header{"User-Agent": {"claude-cli/2.1.325 (external, cli)"}, "X-App": {"cli"}}, body: payload},
 		{name: "metadata", headers: confirmedClaudeCodeHeaders(), body: []byte(`{"messages":[]}`)},
 	} {
 		t.Run(test.name, func(t *testing.T) {
@@ -141,17 +152,17 @@ func TestDetectClaudeCodeRequestClassifiesEntrypoints(t *testing.T) {
 		agentSDKVersion string
 		native          bool
 	}{
-		{name: "cli", userAgent: "claude-cli/2.1.280 (external, cli)", entrypoint: "cli", subclient: "claude-code-cli", native: true},
-		{name: "vscode-agent-sdk", userAgent: "claude-cli/2.1.280 (external, claude-vscode, agent-sdk/0.3.220)", entrypoint: "claude-vscode", subclient: "claude-code-vscode", agentSDKVersion: "0.3.220", native: true},
-		{name: "sdk-cli", userAgent: "claude-cli/2.1.280 (external, sdk-cli)", entrypoint: "sdk-cli", subclient: "claude-code-cli-sdk", native: true},
-		{name: "t3-code", userAgent: "claude-cli/2.1.321 (external, t3-code, agent-sdk/0.3.316)", entrypoint: "t3-code", subclient: "claude-code-t3", agentSDKVersion: "0.3.316", native: true},
-		{name: "sdk-ts", userAgent: "claude-cli/2.1.280 (external, sdk-ts, agent-sdk/0.3.220)", entrypoint: "sdk-ts", subclient: "claude-code-sdk-ts", agentSDKVersion: "0.3.220"},
-		{name: "sdk-py", userAgent: "claude-cli/2.1.280 (external, sdk-py, agent-sdk/0.1.0)", entrypoint: "sdk-py", subclient: "claude-code-sdk-py", agentSDKVersion: "0.1.0"},
-		{name: "desktop", userAgent: "claude-cli/2.1.280 (external, claude-desktop)", entrypoint: "claude-desktop", subclient: "claude-desktop"},
-		{name: "desktop-third-party-inference", userAgent: "claude-cli/2.1.280 (external, claude-desktop-3p)", entrypoint: "claude-desktop-3p", subclient: "claude-desktop-3p"},
-		{name: "remote", userAgent: "claude-cli/2.1.280 (external, remote)", entrypoint: "remote", subclient: "claude-remote"},
-		{name: "github-action", userAgent: "claude-cli/2.1.280 (external, claude-code-github-action)", entrypoint: "claude-code-github-action", subclient: "claude-code-gh-action"},
-		{name: "unknown", userAgent: "claude-cli/2.1.280 (external, copied-client)", entrypoint: "copied-client"},
+		{name: "cli", userAgent: "claude-cli/2.1.325 (external, cli)", entrypoint: "cli", subclient: "claude-code-cli", native: true},
+		{name: "vscode-agent-sdk", userAgent: "claude-cli/2.1.325 (external, claude-vscode, agent-sdk/0.3.220)", entrypoint: "claude-vscode", subclient: "claude-code-vscode", agentSDKVersion: "0.3.220", native: true},
+		{name: "sdk-cli", userAgent: "claude-cli/2.1.325 (external, sdk-cli)", entrypoint: "sdk-cli", subclient: "claude-code-cli-sdk", native: true},
+		{name: "t3-code", userAgent: "claude-cli/2.1.325 (external, t3-code, agent-sdk/0.3.316)", entrypoint: "t3-code", subclient: "claude-code-t3", agentSDKVersion: "0.3.316", native: true},
+		{name: "sdk-ts", userAgent: "claude-cli/2.1.325 (external, sdk-ts, agent-sdk/0.3.220)", entrypoint: "sdk-ts", subclient: "claude-code-sdk-ts", agentSDKVersion: "0.3.220"},
+		{name: "sdk-py", userAgent: "claude-cli/2.1.325 (external, sdk-py, agent-sdk/0.1.0)", entrypoint: "sdk-py", subclient: "claude-code-sdk-py", agentSDKVersion: "0.1.0"},
+		{name: "desktop", userAgent: "claude-cli/2.1.325 (external, claude-desktop)", entrypoint: "claude-desktop", subclient: "claude-desktop"},
+		{name: "desktop-third-party-inference", userAgent: "claude-cli/2.1.325 (external, claude-desktop-3p)", entrypoint: "claude-desktop-3p", subclient: "claude-desktop-3p"},
+		{name: "remote", userAgent: "claude-cli/2.1.325 (external, remote)", entrypoint: "remote", subclient: "claude-remote"},
+		{name: "github-action", userAgent: "claude-cli/2.1.325 (external, claude-code-github-action)", entrypoint: "claude-code-github-action", subclient: "claude-code-gh-action"},
+		{name: "unknown", userAgent: "claude-cli/2.1.325 (external, copied-client)", entrypoint: "copied-client"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			headers := confirmedClaudeCodeHeaders()
@@ -172,7 +183,7 @@ func TestDetectClaudeCodeRequestClassifiesEntrypoints(t *testing.T) {
 
 func TestDetectClaudeCodeCountTokensAllowsMissingMetadata(t *testing.T) {
 	headers := confirmedClaudeCodeHeaders()
-	headers.Set("User-Agent", "claude-cli/2.1.280 (external, claude-vscode, agent-sdk/0.3.220)")
+	headers.Set("User-Agent", "claude-cli/2.1.325 (external, claude-vscode, agent-sdk/0.3.220)")
 	detection := DetectClaudeCodeRequest(headers, []byte(`{"messages":[]}`), true)
 	if !detection.Confirmed {
 		t.Fatalf("detection = %#v, want confirmed", detection)
@@ -222,7 +233,7 @@ func TestDetectClaudeCodeRequestRecognizesMeasuredHaikuHelpers(t *testing.T) {
 			payload: measuredClaudeCodeStructuredHelperPayload(),
 		},
 		{
-			name:    "structured title helper 2.1.280",
+			name:    "structured title helper 2.1.325",
 			beta:    claudeCodeHelperBetaProfile(true, "structured-outputs-2025-12-15", "server-side-fallback-2026-06-01", "fallback-credit-2026-06-01", "cache-diagnosis-2026-04-07"),
 			payload: measuredClaudeCodeTitle280HelperPayload(),
 		},
@@ -271,24 +282,24 @@ func TestDetectClaudeCodeRequestRejectsCrossMismatchedHaikuHelperBetaAndBody(t *
 	)
 	legacyStructuredBeta := claudeCodeHelperBetaProfile(true, "structured-outputs-2025-12-15")
 
-	// 1. Title 2.1.280 beta with 2.1.258 structured stream payload must be rejected
+	// 1. Title 2.1.325 beta with 2.1.258 structured stream payload must be rejected
 	det1 := DetectClaudeCodeRequest(
 		measuredClaudeCodeHelperHeaders(title280Beta),
 		measuredClaudeCodeStructuredHelperPayload(),
 		false,
 	)
 	if det1.Confirmed || det1.HelperProfile {
-		t.Fatalf("det1 = %#v, want 2.1.280 beta with legacy structured payload rejected", det1)
+		t.Fatalf("det1 = %#v, want 2.1.325 beta with legacy structured payload rejected", det1)
 	}
 
-	// 2. Legacy structured beta with 2.1.280 title non-stream payload must be rejected
+	// 2. Legacy structured beta with 2.1.325 title non-stream payload must be rejected
 	det2 := DetectClaudeCodeRequest(
 		measuredClaudeCodeHelperHeaders(legacyStructuredBeta),
 		measuredClaudeCodeTitle280HelperPayload(),
 		false,
 	)
 	if det2.Confirmed || det2.HelperProfile {
-		t.Fatalf("det2 = %#v, want legacy beta with 2.1.280 title payload rejected", det2)
+		t.Fatalf("det2 = %#v, want legacy beta with 2.1.325 title payload rejected", det2)
 	}
 }
 
@@ -411,9 +422,9 @@ func TestDetectClaudeCodeRequestRejectsMalformedNativeSignals(t *testing.T) {
 		{name: "invalid session", headers: confirmedClaudeCodeHeaders(), userID: `{"device_id":"0000000000000000000000000000000000000000000000000000000000000000","account_uuid":"","session_id":"session"}`},
 		{name: "malformed user agent", headers: http.Header{"User-Agent": {"claude-cli/not-a-version (external, cli)"}, "X-App": {"cli"}, "Anthropic-Beta": {"claude-code-20250219"}}, userID: validClaudeCodeMetadataUserID},
 		{name: "older patch user agent", headers: http.Header{"User-Agent": {"claude-cli/2.1.257 (external, cli)"}, "X-App": {"cli"}, "Anthropic-Beta": {"claude-code-20250219"}}, userID: validClaudeCodeMetadataUserID},
-		{name: "unmeasured next-minor user agent", headers: http.Header{"User-Agent": {"claude-cli/2.2.0 (external, cli)"}, "X-App": {"cli"}, "Anthropic-Beta": {"claude-code-20250219"}}, userID: validClaudeCodeMetadataUserID},
+		{name: "unmeasured next-major user agent", headers: http.Header{"User-Agent": {"claude-cli/3.0.0 (external, cli)"}, "X-App": {"cli"}, "Anthropic-Beta": {"claude-code-20250219"}}, userID: validClaudeCodeMetadataUserID},
 		{name: "implausible future user agent", headers: http.Header{"User-Agent": {"claude-cli/999.0.0 (external, cli)"}, "X-App": {"cli"}, "Anthropic-Beta": {"claude-code-20250219"}}, userID: validClaudeCodeMetadataUserID},
-		{name: "unrelated beta", headers: http.Header{"User-Agent": {"claude-cli/2.1.280 (external, cli)"}, "X-App": {"cli"}, "Anthropic-Beta": {"anything"}}, userID: validClaudeCodeMetadataUserID},
+		{name: "unrelated beta", headers: http.Header{"User-Agent": {"claude-cli/2.1.325 (external, cli)"}, "X-App": {"cli"}, "Anthropic-Beta": {"anything"}}, userID: validClaudeCodeMetadataUserID},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {

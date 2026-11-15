@@ -217,7 +217,7 @@ func TestApplyClaudeHeaders_UsesConfiguredBaselineFingerprint(t *testing.T) {
 	}
 }
 
-func TestApplyClaudeHeaders_RejectsUnmeasuredClaudeCLIFingerprints(t *testing.T) {
+func TestApplyClaudeHeaders_StabilizedProfileFollowsNewestVerifiedClient(t *testing.T) {
 	resetClaudeDeviceProfileCache()
 	stabilize := true
 
@@ -247,7 +247,7 @@ func TestApplyClaudeHeaders_RejectsUnmeasuredClaudeCLIFingerprints(t *testing.T)
 		"X-Stainless-Arch":            []string{"x64"},
 	})
 	applyClaudeHeaders(firstReq, auth, "key-upgrade", false, nil, nil, cfg, nil, true)
-	assertClaudeFingerprint(t, firstReq.Header, "claude-cli/2.1.60 (external, cli)", "0.70.0", "v22.0.0", "MacOS", "arm64")
+	assertClaudeFingerprint(t, firstReq.Header, "claude-cli/2.1.62 (external, cli)", "0.74.0", "v24.3.0", "MacOS", "arm64")
 
 	thirdPartyReq := newClaudeHeaderTestRequest(t, http.Header{
 		"User-Agent":                  []string{"lobe-chat/1.0"},
@@ -257,7 +257,7 @@ func TestApplyClaudeHeaders_RejectsUnmeasuredClaudeCLIFingerprints(t *testing.T)
 		"X-Stainless-Arch":            []string{"x64"},
 	})
 	applyClaudeHeaders(thirdPartyReq, auth, "key-upgrade", false, nil, nil, cfg, nil, false)
-	assertClaudeFingerprint(t, thirdPartyReq.Header, "claude-cli/2.1.60 (external, cli)", "0.70.0", "v22.0.0", "MacOS", "arm64")
+	assertClaudeFingerprint(t, thirdPartyReq.Header, "claude-cli/2.1.62 (external, cli)", "0.74.0", "v24.3.0", "MacOS", "arm64")
 
 	higherReq := newClaudeHeaderTestRequest(t, http.Header{
 		"User-Agent":                  []string{"claude-cli/2.1.63 (external, cli)"},
@@ -267,7 +267,7 @@ func TestApplyClaudeHeaders_RejectsUnmeasuredClaudeCLIFingerprints(t *testing.T)
 		"X-Stainless-Arch":            []string{"arm64"},
 	})
 	applyClaudeHeaders(higherReq, auth, "key-upgrade", false, nil, nil, cfg, nil, true)
-	assertClaudeFingerprint(t, higherReq.Header, "claude-cli/2.1.60 (external, cli)", "0.70.0", "v22.0.0", "MacOS", "arm64")
+	assertClaudeFingerprint(t, higherReq.Header, "claude-cli/2.1.63 (external, cli)", "0.75.0", "v24.4.0", "MacOS", "arm64")
 
 	lowerReq := newClaudeHeaderTestRequest(t, http.Header{
 		"User-Agent":                  []string{"claude-cli/2.1.61 (external, cli)"},
@@ -276,8 +276,9 @@ func TestApplyClaudeHeaders_RejectsUnmeasuredClaudeCLIFingerprints(t *testing.T)
 		"X-Stainless-Os":              []string{"Windows"},
 		"X-Stainless-Arch":            []string{"x64"},
 	})
+	// An older verified client keeps the newer stored profile.
 	applyClaudeHeaders(lowerReq, auth, "key-upgrade", false, nil, nil, cfg, nil, true)
-	assertClaudeFingerprint(t, lowerReq.Header, "claude-cli/2.1.60 (external, cli)", "0.70.0", "v22.0.0", "MacOS", "arm64")
+	assertClaudeFingerprint(t, lowerReq.Header, "claude-cli/2.1.63 (external, cli)", "0.75.0", "v24.4.0", "MacOS", "arm64")
 }
 
 func TestApplyClaudeHeaders_DoesNotDowngradeConfiguredBaselineOnFirstClaudeClient(t *testing.T) {
@@ -319,7 +320,7 @@ func TestApplyClaudeHeaders_DoesNotDowngradeConfiguredBaselineOnFirstClaudeClien
 		"X-Stainless-Arch":            []string{"x64"},
 	})
 	applyClaudeHeaders(newerClaudeReq, auth, "key-baseline-floor", false, nil, nil, cfg, nil, true)
-	assertClaudeFingerprint(t, newerClaudeReq.Header, "claude-cli/2.1.70 (external, cli)", "0.80.0", "v24.5.0", "MacOS", "arm64")
+	assertClaudeFingerprint(t, newerClaudeReq.Header, "claude-cli/2.1.71 (external, cli)", "0.81.0", "v24.6.0", "MacOS", "arm64")
 }
 
 func TestApplyClaudeHeaders_UpgradesCachedSoftwareFingerprintWhenBaselineAdvances(t *testing.T) {
@@ -362,7 +363,7 @@ func TestApplyClaudeHeaders_UpgradesCachedSoftwareFingerprintWhenBaselineAdvance
 		"X-Stainless-Arch":            []string{"x64"},
 	})
 	applyClaudeHeaders(officialReq, auth, "key-baseline-reload", false, nil, nil, oldCfg, nil, true)
-	assertClaudeFingerprint(t, officialReq.Header, "claude-cli/2.1.70 (external, cli)", "0.80.0", "v24.5.0", "MacOS", "arm64")
+	assertClaudeFingerprint(t, officialReq.Header, "claude-cli/2.1.71 (external, cli)", "0.81.0", "v24.6.0", "MacOS", "arm64")
 
 	thirdPartyReq := newClaudeHeaderTestRequest(t, http.Header{
 		"User-Agent":                  []string{"curl/8.7.1"},
@@ -574,7 +575,7 @@ func TestApplyClaudeHeaders_ThirdPartyBaselineThenOfficialUpgradeKeepsPinnedPlat
 		"X-Stainless-Arch":            []string{"x64"},
 	})
 	applyClaudeHeaders(officialReq, auth, "key-third-party-then-official", false, nil, nil, cfg, nil, true)
-	assertClaudeFingerprint(t, officialReq.Header, "claude-cli/2.1.70 (external, cli)", "0.80.0", "v24.5.0", "MacOS", "arm64")
+	assertClaudeFingerprint(t, officialReq.Header, "claude-cli/2.1.77 (external, cli)", "0.87.0", "v24.8.0", "MacOS", "arm64")
 }
 
 func TestApplyClaudeHeaders_DisableDeviceProfileStabilization(t *testing.T) {
@@ -607,7 +608,7 @@ func TestApplyClaudeHeaders_DisableDeviceProfileStabilization(t *testing.T) {
 		"X-Stainless-Arch":            []string{"x64"},
 	})
 	applyClaudeHeaders(firstReq, auth, "key-disable-stability", false, nil, nil, cfg, nil, true)
-	assertClaudeFingerprint(t, firstReq.Header, "claude-cli/2.1.62 (external, cli)", "0.70.0", "v22.0.0", "Linux", "x64")
+	assertClaudeFingerprint(t, firstReq.Header, "claude-cli/2.1.62 (external, cli)", "0.74.0", "v24.3.0", "Linux", "x64")
 
 	thirdPartyReq := newClaudeHeaderTestRequest(t, http.Header{
 		"User-Agent":                  []string{"lobe-chat/1.0"},
@@ -616,8 +617,9 @@ func TestApplyClaudeHeaders_DisableDeviceProfileStabilization(t *testing.T) {
 		"X-Stainless-Os":              []string{"Windows"},
 		"X-Stainless-Arch":            []string{"x64"},
 	})
+	// The verified client raised the baseline used for clients the proxy cloaks.
 	applyClaudeHeaders(thirdPartyReq, auth, "key-disable-stability", false, nil, nil, cfg, nil, false)
-	assertClaudeFingerprint(t, thirdPartyReq.Header, "claude-cli/2.1.60 (external, cli)", "0.70.0", "v22.0.0", "MacOS", "arm64")
+	assertClaudeFingerprint(t, thirdPartyReq.Header, "claude-cli/2.1.62 (external, cli)", "0.74.0", "v24.3.0", "MacOS", "arm64")
 
 	olderReq := newClaudeHeaderTestRequest(t, http.Header{
 		"User-Agent":                  []string{"claude-cli/2.1.59 (external, cli)"},
@@ -627,7 +629,7 @@ func TestApplyClaudeHeaders_DisableDeviceProfileStabilization(t *testing.T) {
 		"X-Stainless-Arch":            []string{"x64"},
 	})
 	applyClaudeHeaders(olderReq, auth, "key-disable-stability", false, nil, nil, cfg, nil, true)
-	assertClaudeFingerprint(t, olderReq.Header, "claude-cli/2.1.60 (external, cli)", "0.70.0", "v22.0.0", "MacOS", "arm64")
+	assertClaudeFingerprint(t, olderReq.Header, "claude-cli/2.1.62 (external, cli)", "0.74.0", "v24.3.0", "MacOS", "arm64")
 }
 
 func TestApplyClaudeHeaders_LegacyModePreservesConfiguredUserAgentOverrideForClaudeClients(t *testing.T) {
@@ -659,7 +661,7 @@ func TestApplyClaudeHeaders_LegacyModePreservesConfiguredUserAgentOverrideForCla
 	})
 	applyClaudeHeaders(req, auth, "key-legacy-ua-override", false, nil, nil, cfg, nil, true)
 
-	assertClaudeFingerprint(t, req.Header, "config-ua/1.0", "0.70.0", "v22.0.0", "Linux", "x64")
+	assertClaudeFingerprint(t, req.Header, "config-ua/1.0", "0.74.0", "v24.3.0", "Linux", "x64")
 }
 
 func TestApplyClaudeHeaders_LegacyThirdPartyUsesStableConfiguredOSArch(t *testing.T) {
@@ -816,7 +818,7 @@ func TestClaudeExecutor_NonClaudeRequestUsesClaudeCode220CLIFingerprint(t *testi
 		t.Fatalf("Execute() error = %v", errExecute)
 	}
 
-	assertClaudeFingerprint(t, seenHeaders, "claude-cli/2.1.280 (external, cli)", "0.112.1", "v26.3.0", "MacOS", "arm64")
+	assertClaudeFingerprint(t, seenHeaders, "claude-cli/2.1.325 (external, cli)", "0.128.0", "v26.12.1", "MacOS", "arm64")
 	if got := seenHeaders.Get("X-App"); got != "cli" {
 		t.Fatalf("X-App = %q, want cli", got)
 	}
@@ -828,8 +830,8 @@ func TestClaudeExecutor_NonClaudeRequestUsesClaudeCode220CLIFingerprint(t *testi
 	if len(system) != 2 {
 		t.Fatalf("system block count = %d, want 2: %s", len(system), seenBody)
 	}
-	if got := system[0].Get("text").String(); got != "x-anthropic-billing-header: cc_version=2.1.280.d7b; cc_entrypoint=cli;" {
-		t.Fatalf("billing header = %q, want 2.1.280 CLI fingerprint", got)
+	if got := system[0].Get("text").String(); got != "x-anthropic-billing-header: cc_version=2.1.325.ff3; cc_entrypoint=cli;" {
+		t.Fatalf("billing header = %q, want 2.1.325 CLI fingerprint", got)
 	}
 	if got := system[1].Get("text").String(); got != claudeCodeCLIIdentity {
 		t.Fatalf("system[1].text = %q, want official CLI identity", got)
@@ -877,12 +879,12 @@ func TestClaudeExecutor_ConfirmedNewerPatchClaudeCodeRequestPreservesInteractive
 	const userID = `{"device_id":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","account_uuid":"","session_id":"11111111-2222-4333-8444-555555555555"}`
 	payload := []byte(`{"model":"claude-opus-4-6","system":[{"type":"text","text":"interactive-system","cache_control":{"type":"ephemeral"}}],"messages":[{"role":"user","content":"x"}],"metadata":{"user_id":` + fmt.Sprintf("%q", userID) + `}}`)
 	incoming := http.Header{
-		"User-Agent":                  {"claude-cli/2.1.281 (external, cli)"},
+		"User-Agent":                  {"claude-cli/2.1.326 (external, cli)"},
 		"X-App":                       {"cli"},
 		"Anthropic-Beta":              {"claude-code-20250219,interleaved-thinking-2025-05-14,redact-thinking-2026-02-12,thinking-token-count-2026-05-13,context-management-2025-06-27,prompt-caching-scope-2026-01-05,effort-2025-11-24"},
 		"X-Claude-Code-Session-Id":    {sessionID},
-		"X-Stainless-Package-Version": {"0.112.1"},
-		"X-Stainless-Runtime-Version": {"v26.3.0"},
+		"X-Stainless-Package-Version": {"0.128.0"},
+		"X-Stainless-Runtime-Version": {"v26.12.1"},
 		"X-Stainless-Os":              {"MacOS"},
 		"X-Stainless-Arch":            {"arm64"},
 	}
@@ -904,7 +906,7 @@ func TestClaudeExecutor_ConfirmedNewerPatchClaudeCodeRequestPreservesInteractive
 		t.Fatalf("Execute() error = %v", errExecute)
 	}
 
-	assertClaudeFingerprint(t, seenHeaders, "claude-cli/2.1.281 (external, cli)", "0.112.1", "v26.3.0", "MacOS", "arm64")
+	assertClaudeFingerprint(t, seenHeaders, "claude-cli/2.1.326 (external, cli)", "0.128.0", "v26.12.1", "MacOS", "arm64")
 	if got := gjson.GetBytes(seenBody, "system.0.text").String(); got != "interactive-system" {
 		t.Fatalf("system.0.text = %q, want confirmed client system preserved", got)
 	}
@@ -947,7 +949,7 @@ func TestClaudeExecutor_ConfirmedClaudeCodeWithoutCacheControlPreservesContent(t
 			const userID = `{"device_id":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","account_uuid":"","session_id":"11111111-2222-4333-8444-555555555555"}`
 			payload := []byte(`{"model":"claude-opus-4-6","messages":[{"role":"user","content":"x"}],"metadata":{"user_id":` + fmt.Sprintf("%q", userID) + `}}`)
 			incoming := http.Header{
-				"User-Agent":               {"claude-cli/2.1.280 (external, cli)"},
+				"User-Agent":               {"claude-cli/2.1.325 (external, cli)"},
 				"X-App":                    {"cli"},
 				"Anthropic-Beta":           {"claude-code-20250219"},
 				"X-Claude-Code-Session-Id": {sessionID},
@@ -1002,11 +1004,11 @@ func TestClaudeExecutor_ConfirmedCLIForwardsNativeOpus55Shape(t *testing.T) {
 	defer server.Close()
 
 	const userID = `{"device_id":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","account_uuid":"11111111-2222-4333-8444-555555555555","session_id":"11111111-2222-4333-8444-555555555555"}`
-	const billing = "x-anthropic-billing-header: cc_version=2.1.280.d7b; cc_entrypoint=cli; cch=00000; cc_turn_origin=human;"
+	const billing = "x-anthropic-billing-header: cc_version=2.1.325.d7b; cc_entrypoint=cli; cch=00000; cc_turn_origin=human;"
 	const betas = "claude-code-20250219,oauth-2025-04-20,mid-conversation-system-clear-at-2026-08-21,thinking-binding-controls-2026-08-01,extended-cache-ttl-2025-04-11"
 	payload := []byte(`{"model":"claude-opus-5-5","system":[{"type":"text","text":` + fmt.Sprintf("%q", billing) + `},{"type":"text","text":"native identity"},{"type":"text","text":"native model block"}],"messages":[{"role":"user","content":"hello"}],"metadata":{"user_id":` + fmt.Sprintf("%q", userID) + `},"fallbacks":[{"model":"claude-opus-4-8"}],"thinking":{"type":"adaptive","display":"updates"}}`)
 	incoming := http.Header{
-		"User-Agent":                  {"claude-cli/2.1.280 (external, cli)"},
+		"User-Agent":                  {"claude-cli/2.1.325 (external, cli)"},
 		"X-App":                       {"cli"},
 		"Anthropic-Beta":              {betas},
 		"X-Claude-Code-Session-Id":    {"11111111-2222-4333-8444-555555555555"},
@@ -1062,7 +1064,7 @@ func TestClaudeExecutor_ConfirmedVSCodeAgentSDKRequestPreservesIdentity(t *testi
 
 	const sessionID = "22222222-3333-4444-8555-666666666666"
 	const userID = `{"device_id":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","account_uuid":"","session_id":"22222222-3333-4444-8555-666666666666"}`
-	const vscodeUA = "claude-cli/2.1.280 (external, claude-vscode, agent-sdk/0.3.220)"
+	const vscodeUA = "claude-cli/2.1.325 (external, claude-vscode, agent-sdk/0.3.220)"
 	const billingHeader = "x-anthropic-billing-header: cc_version=2.1.258.9cb; cc_entrypoint=claude-vscode;"
 	payload := []byte(`{"model":"claude-opus-4-6","system":[{"type":"text","text":` + fmt.Sprintf("%q", billingHeader) + `},{"type":"text","text":"You are a Claude agent, built on Anthropic's Claude Agent SDK.","cache_control":{"type":"ephemeral","ttl":"1h"}},{"type":"text","text":"vscode-agent-system"}],"messages":[{"role":"user","content":"x"}],"metadata":{"user_id":` + fmt.Sprintf("%q", userID) + `}}`)
 	incoming := http.Header{
@@ -1071,8 +1073,8 @@ func TestClaudeExecutor_ConfirmedVSCodeAgentSDKRequestPreservesIdentity(t *testi
 		"Anthropic-Beta": {"claude-code-20250219,interleaved-thinking-2025-05-14"},
 		"Anthropic-Dangerous-Direct-Browser-Access": {"true"},
 		"X-Claude-Code-Session-Id":                  {sessionID},
-		"X-Stainless-Package-Version":               {"0.112.1"},
-		"X-Stainless-Runtime-Version":               {"v26.3.0"},
+		"X-Stainless-Package-Version":               {"0.128.0"},
+		"X-Stainless-Runtime-Version":               {"v26.12.1"},
 		"X-Stainless-Os":                            {"MacOS"},
 		"X-Stainless-Arch":                          {"arm64"},
 	}
@@ -1095,7 +1097,7 @@ func TestClaudeExecutor_ConfirmedVSCodeAgentSDKRequestPreservesIdentity(t *testi
 		t.Fatalf("Execute() error = %v", errExecute)
 	}
 
-	assertClaudeFingerprint(t, seenHeaders, vscodeUA, "0.112.1", "v26.3.0", "MacOS", "arm64")
+	assertClaudeFingerprint(t, seenHeaders, vscodeUA, "0.128.0", "v26.12.1", "MacOS", "arm64")
 	if got := seenHeaders.Get("Anthropic-Dangerous-Direct-Browser-Access"); got != "true" {
 		t.Fatalf("Anthropic-Dangerous-Direct-Browser-Access = %q, want preserved true", got)
 	}
@@ -1147,7 +1149,7 @@ func TestClaudeExecutor_CopiedVSCodeAgentSDKHeadersWithoutMetadataAreCloaked(t *
 		SourceFormat:    sdktranslator.FormatClaude,
 		OriginalRequest: payload,
 		Headers: http.Header{
-			"User-Agent":     {"claude-cli/2.1.280 (external, claude-vscode, agent-sdk/0.3.220)"},
+			"User-Agent":     {"claude-cli/2.1.325 (external, claude-vscode, agent-sdk/0.3.220)"},
 			"X-App":          {"cli"},
 			"Anthropic-Beta": {"claude-code-20250219"},
 		},
@@ -1156,7 +1158,7 @@ func TestClaudeExecutor_CopiedVSCodeAgentSDKHeadersWithoutMetadataAreCloaked(t *
 		t.Fatalf("Execute() error = %v", errExecute)
 	}
 
-	if got := seenHeaders.Get("User-Agent"); got != "claude-cli/2.1.280 (external, cli)" {
+	if got := seenHeaders.Get("User-Agent"); got != "claude-cli/2.1.325 (external, cli)" {
 		t.Fatalf("User-Agent = %q, want CLI cloak", got)
 	}
 	if got := gjson.GetBytes(seenBody, "system.#").Int(); got != 2 {
@@ -1196,7 +1198,7 @@ func TestClaudeExecutor_AgentSDKEntrypointWithStrongSignalsUsesCLICloak(t *testi
 		SourceFormat:    sdktranslator.FormatClaude,
 		OriginalRequest: payload,
 		Headers: http.Header{
-			"User-Agent":     {"claude-cli/2.1.280 (external, sdk-ts, agent-sdk/0.3.220)"},
+			"User-Agent":     {"claude-cli/2.1.325 (external, sdk-ts, agent-sdk/0.3.220)"},
 			"X-App":          {"cli"},
 			"Anthropic-Beta": {"claude-code-20250219"},
 		},
@@ -1205,7 +1207,7 @@ func TestClaudeExecutor_AgentSDKEntrypointWithStrongSignalsUsesCLICloak(t *testi
 		t.Fatalf("Execute() error = %v", errExecute)
 	}
 
-	if got := seenHeaders.Get("User-Agent"); got != "claude-cli/2.1.280 (external, cli)" {
+	if got := seenHeaders.Get("User-Agent"); got != "claude-cli/2.1.325 (external, cli)" {
 		t.Fatalf("User-Agent = %q, want CLI cloak", got)
 	}
 	if got := gjson.GetBytes(seenBody, "system.0.text").String(); !strings.Contains(got, "cc_entrypoint=cli;") {
@@ -1251,11 +1253,11 @@ func TestClaudeExecutor_ConfirmedVSCodeOAuthPreservesToolNames(t *testing.T) {
 		SourceFormat:    sdktranslator.FormatClaude,
 		OriginalRequest: payload,
 		Headers: http.Header{
-			"User-Agent":                  {"claude-cli/2.1.280 (external, claude-vscode, agent-sdk/0.3.220)"},
+			"User-Agent":                  {"claude-cli/2.1.325 (external, claude-vscode, agent-sdk/0.3.220)"},
 			"X-App":                       {"cli"},
 			"Anthropic-Beta":              {"claude-code-20250219"},
-			"X-Stainless-Package-Version": {"0.112.1"},
-			"X-Stainless-Runtime-Version": {"v26.3.0"},
+			"X-Stainless-Package-Version": {"0.128.0"},
+			"X-Stainless-Runtime-Version": {"v26.12.1"},
 		},
 	})
 	if errExecute != nil {
@@ -2461,7 +2463,7 @@ func TestClaudeExecutor_CountTokensUpstreamConfirmedVSCodePreservesCustomTool(t 
 	}, cliproxyexecutor.Options{
 		SourceFormat: sdktranslator.FormatClaude,
 		Headers: http.Header{
-			"User-Agent":     {"claude-cli/2.1.280 (external, claude-vscode, agent-sdk/0.3.220)"},
+			"User-Agent":     {"claude-cli/2.1.325 (external, claude-vscode, agent-sdk/0.3.220)"},
 			"X-App":          {"cli"},
 			"Anthropic-Beta": {"claude-code-20250219"},
 		},
@@ -2655,7 +2657,7 @@ func TestClaudeExecutor_CountTokensConfirmedNativePreservesMeasuredOAuthBody(t *
 	_, errCount := executor.countTokensUpstream(ctx, auth, cliproxyexecutor.Request{Model: "claude-opus-5", Payload: payload}, cliproxyexecutor.Options{
 		SourceFormat: sdktranslator.FormatClaude,
 		Headers: http.Header{
-			"User-Agent":     {"claude-cli/2.1.280 (external, cli)"},
+			"User-Agent":     {"claude-cli/2.1.325 (external, cli)"},
 			"X-App":          {"cli"},
 			"Anthropic-Beta": {incomingBetas},
 		},
@@ -5008,7 +5010,7 @@ func TestClaudeExecutor_RebuildMidSystemMessageDisabledByDefault(t *testing.T) {
 	}}
 	payload := []byte(`{"system":[{"type":"text","text":"Top rule","cache_control":{"type":"ephemeral"}}],"messages":[{"role":"user","content":[{"type":"text","text":"hi"}]},{"role":"system","content":"Mid rule"},{"role":"user","content":[{"type":"text","text":"continue"}]}],"metadata":{"user_id":"{\"device_id\":\"0000000000000000000000000000000000000000000000000000000000000000\",\"account_uuid\":\"\",\"session_id\":\"11111111-2222-4333-8444-555555555555\"}"}}`)
 	ctx := contextWithGinHeaders(map[string]string{
-		"User-Agent":     "claude-cli/2.1.280 (external, cli)",
+		"User-Agent":     "claude-cli/2.1.325 (external, cli)",
 		"X-App":          "cli",
 		"Anthropic-Beta": "claude-code-20250219",
 	})
@@ -5054,7 +5056,7 @@ func TestClaudeExecutor_RebuildMidSystemMessageOptInMovesSystemMessages(t *testi
 	}}
 	payload := []byte(`{"system":"Top rule","messages":[{"role":"user","content":[{"type":"text","text":"hi"}]},{"role":"system","content":"Mid string rule"},{"role":"assistant","content":[{"type":"text","text":"ok"}]},{"role":"system","content":[{"type":"text","text":"Mid array rule","cache_control":{"type":"ephemeral"}}]},{"role":"user","content":[{"type":"text","text":"continue"}]}],"metadata":{"user_id":"{\"device_id\":\"0000000000000000000000000000000000000000000000000000000000000000\",\"account_uuid\":\"\",\"session_id\":\"11111111-2222-4333-8444-555555555555\"}"}}`)
 	ctx := contextWithGinHeaders(map[string]string{
-		"User-Agent":     "claude-cli/2.1.280 (external, cli)",
+		"User-Agent":     "claude-cli/2.1.325 (external, cli)",
 		"X-App":          "cli",
 		"Anthropic-Beta": "claude-code-20250219",
 	})
@@ -5636,7 +5638,7 @@ func TestClaudeExecutor_SubagentAndProbeOmit1hCacheTTLAndBeta(t *testing.T) {
 	}, cliproxyexecutor.Options{
 		SourceFormat: sdktranslator.FormatClaude,
 		Headers: http.Header{
-			"User-Agent":             {"claude-cli/2.1.280 (external, cli)"},
+			"User-Agent":             {"claude-cli/2.1.325 (external, cli)"},
 			"X-Claude-Code-Agent-Id": {"subagent-confirmed-456"},
 			"Anthropic-Beta":         {"claude-code-20250219,oauth-2025-04-20,effort-2025-11-24"},
 		},
@@ -7868,7 +7870,7 @@ func TestClaudeExecutor_ExecuteOAuthCustomToolMCPAliasRoundTrip(t *testing.T) {
 	if _, ok := claudeBillingCCHDigitsOffset(upstreamBody); !ok {
 		t.Fatalf("Claude OAuth custom BaseURL body is missing CCH: %s", upstreamBody)
 	}
-	if got := upstreamHeaders.Get("User-Agent"); got != "claude-cli/2.1.280 (external, cli)" {
+	if got := upstreamHeaders.Get("User-Agent"); got != "claude-cli/2.1.325 (external, cli)" {
 		t.Fatalf("Messages User-Agent = %q, want CLI identity", got)
 	}
 	wantBetas := claudeCodeCLIBetas(payload, nil, true)
@@ -7945,7 +7947,7 @@ func TestClaudeExecutor_ExecuteStreamOAuthCustomToolMCPAliasRoundTrip(t *testing
 	if _, ok := claudeBillingCCHDigitsOffset(upstreamBody); !ok {
 		t.Fatalf("streaming Claude OAuth custom BaseURL body is missing CCH: %s", upstreamBody)
 	}
-	if got := upstreamHeaders.Get("User-Agent"); got != "claude-cli/2.1.280 (external, cli)" {
+	if got := upstreamHeaders.Get("User-Agent"); got != "claude-cli/2.1.325 (external, cli)" {
 		t.Fatalf("streaming User-Agent = %q, want CLI identity", got)
 	}
 	wantBetas := claudeCodeCLIBetas(payload, nil, true)
@@ -8170,7 +8172,7 @@ func TestClaudeCodeCLIBetas_MatchesObservedClientMatrix(t *testing.T) {
 			want: constants + ",mid-conversation-system-2026-04-07,per-turn-control-2026-07-01,mid-conversation-tool-changes-2026-07-01,mid-conversation-system-clear-at-2026-08-21,effort-2025-11-24",
 		},
 		{
-			name: "opus-5-5 timing and the other 2.1.280 gated betas keep wire order",
+			name: "opus-5-5 timing and the other 2.1.325 gated betas keep wire order",
 			body: `{"model":"claude-opus-5-5","safeguards":[{}],"thinking":{"type":"adaptive","block_binding":{"prefix_mismatch_behavior":"omit"}},"messages":[{"role":"system","clear_at":"next_user_message","content":[{"type":"tool_addition","tool":{"definition":{"name":"bash"}}}]},{"role":"user","content":"x","output_config":{"timing":{"now":"2026-09-23T00:00:00Z"}}}],"cache_control":{"type":"ephemeral","evict_on_complete":true}}`,
 			requested: map[string]bool{
 				claudeThinkingResumptionBeta: true,

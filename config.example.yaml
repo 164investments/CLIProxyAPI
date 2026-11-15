@@ -401,19 +401,20 @@ upstream:
     # anything else is dropped so the outgoing set stays one a real client could produce.
     # Other Anthropic-compatible upstreams still forward caller betas verbatim.
     #
-    # Shared Claude CLI fingerprint defaults. Update only after measuring a new Claude Code release.
-    # Unconfirmed clients use this CLI baseline. Verified native Claude Code CLI, sdk-cli,
-    # and VSCode requests preserve their measured entrypoint when the Claude Code version is a
-    # patch release in the configured major/minor line at or above this baseline. Older versions
-    # and newer major/minor lines fall back to the baseline until measured. In legacy mode,
-    # timeout is a fallback and
-    # verified native OS/arch values remain client-supplied. When stabilize-device-profile is
-    # enabled, OS/arch are pinned to the values below and cached profiles remain constrained to
-    # the same exact software baseline rather than learning newer client versions.
+    # Shared Claude CLI fingerprint defaults. These are a floor; you rarely need to set them.
+    # Verified native Claude Code CLI, sdk-cli, VSCode and T3 Code requests keep their own
+    # Claude Code, package and runtime versions when they match this baseline exactly, or when
+    # they are a newer release in the same major line with a complete tuple no older than it.
+    # The newest such tuple then also becomes the fingerprint for clients the proxy cloaks, so a
+    # Claude Code update reaches every client without a config change. Older, incomplete or
+    # unverified tuples are replaced as a whole by the baseline, never mixed with it. In legacy
+    # mode, timeout is a fallback and verified native OS/arch values remain client-supplied.
+    # When stabilize-device-profile is enabled, OS/arch are pinned to the values below and each
+    # credential's cached profile rises to the newest verified tuple.
     # header-defaults:
-    #   user-agent: "claude-cli/2.1.280 (external, cli)"
-    #   package-version: "0.112.1"
-    #   runtime-version: "v26.3.0"
+    #   user-agent: "claude-cli/2.1.325 (external, cli)"
+    #   package-version: "0.128.0"
+    #   runtime-version: "v26.12.1"
     #   os: "MacOS"
     #   arch: "arm64"
     #   timeout: "600"

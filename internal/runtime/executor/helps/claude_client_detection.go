@@ -287,7 +287,7 @@ func measuredClaudeCodeHelperHeadersMatch(headers http.Header, cfg *config.Confi
 		candidate.version = version
 		candidate.hasVersion = true
 	}
-	if !meetsClaudeDeviceProfileBaseline(candidate, profile) {
+	if !nativeClaudeDeviceProfileUsable(candidate, profile) {
 		return false
 	}
 	// Claude Code 2.1.258 (@anthropic-ai/sdk 0.112.1), measured 2026-09-02 on the
