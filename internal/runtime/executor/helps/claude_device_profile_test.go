@@ -346,6 +346,27 @@ func TestVerifiedClientOutsideLearningBoundDoesNotRaiseSharedBaseline(t *testing
 	}
 }
 
+func TestNewerNonCLIClientRaisesCloakedBaselineWithCLIUserAgent(t *testing.T) {
+	ResetClaudeDeviceProfileCache()
+	t.Cleanup(ResetClaudeDeviceProfileCache)
+	incoming := newerClaudeDeviceHeaders()
+	incoming.Set("User-Agent", "claude-cli/2.1.330 (external, t3-code, agent-sdk/0.3.320)")
+
+	verified, errRequest := http.NewRequest(http.MethodPost, "https://api.anthropic.com/v1/messages", nil)
+	if errRequest != nil {
+		t.Fatal(errRequest)
+	}
+	ApplyClaudeLegacyDeviceHeaders(verified, incoming, nil, true)
+	assertClaudeSoftwareTuple(t, verified.Header, "claude-cli/2.1.330 (external, t3-code, agent-sdk/0.3.320)", "0.129.0", "v26.12.2")
+
+	cloaked, errCloaked := http.NewRequest(http.MethodPost, "https://api.anthropic.com/v1/messages", nil)
+	if errCloaked != nil {
+		t.Fatal(errCloaked)
+	}
+	ApplyClaudeLegacyDeviceHeaders(cloaked, http.Header{"User-Agent": {"curl/8.7.1"}}, nil, false)
+	assertClaudeSoftwareTuple(t, cloaked.Header, "claude-cli/2.1.330 (external, cli)", "0.129.0", "v26.12.2")
+}
+
 func TestApplyClaudeLegacyDeviceHeadersReplacesInvalidNativeSoftwareSignals(t *testing.T) {
 	ResetClaudeDeviceProfileCache()
 	request, errRequest := http.NewRequest(http.MethodPost, "https://api.anthropic.com/v1/messages", nil)

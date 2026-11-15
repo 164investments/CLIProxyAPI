@@ -190,12 +190,18 @@ func effectiveClaudeDeviceProfile(cfg *config.Config) ClaudeDeviceProfile {
 }
 
 // observeClaudeDeviceProfile raises the effective baseline to a verified native
-// client's tuple when that tuple is usable and newer than what is known.
+// client's tuple when that tuple is usable and newer than what is known. Only
+// the software versions are learned: the stored User-Agent is the plain CLI one
+// the same Claude Code binary sends as `claude`, because cloaked traffic is
+// shaped and billed as the CLI entrypoint whatever product surface taught it.
 func observeClaudeDeviceProfile(candidate ClaudeDeviceProfile, cfg *config.Config) {
 	baseline := defaultClaudeDeviceProfile(cfg)
-	if !nativeClaudeDeviceProfileUsable(candidate, baseline) || !withinObservedClaudeDeviceProfileBound(candidate, baseline) {
+	if !nativeClaudeDeviceProfileUsable(candidate, baseline) ||
+		!withinObservedClaudeDeviceProfileBound(candidate, baseline) ||
+		candidate.version.Compare(baseline.version) <= 0 {
 		return
 	}
+	candidate.UserAgent = fmt.Sprintf("claude-cli/%d.%d.%d (external, cli)", candidate.version.major, candidate.version.minor, candidate.version.patch)
 	observedClaudeDeviceProfileMu.Lock()
 	defer observedClaudeDeviceProfileMu.Unlock()
 	if observedClaudeDeviceProfile.hasVersion && candidate.version.Compare(observedClaudeDeviceProfile.version) <= 0 {
