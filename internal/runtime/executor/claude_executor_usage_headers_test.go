@@ -10,7 +10,7 @@ import (
 
 func TestClaudeUsageRequestUsesConfiguredSoftwareBaseline(t *testing.T) {
 	for _, test := range []struct{ name, configured, caller, want string }{
-		{"default", "", "", "claude-cli/2.1.280 (external, cli)"},
+		{"default", "", "", "claude-cli/2.1.325 (external, cli)"},
 		{"configured", "custom-cli/1.0", "", "custom-cli/1.0"},
 		{"explicit request", "custom-cli/1.0", "request-agent/2.0", "request-agent/2.0"},
 	} {

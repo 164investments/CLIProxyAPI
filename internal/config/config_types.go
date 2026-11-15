@@ -119,10 +119,12 @@ type ClaudeConfig struct {
 }
 
 // ClaudeHeaderDefaults configures the measured Claude Code software baseline.
-// Verified native requests preserve their entrypoint and software shape only when their
-// Claude Code, package, and runtime versions exactly match this baseline; unmeasured
-// versions use the configured values. Timeout remains a fallback. Stabilized profiles
-// also pin OS and Arch and never learn newer software versions automatically.
+// It is a floor. A verified native request keeps its own Claude Code, package and
+// runtime versions when they exactly match this baseline, or when it is a newer
+// release in the same major line that sends a complete, well-formed tuple no older
+// than this one; the proxy then uses that newest verified tuple for the fingerprints
+// it supplies itself. Older, incomplete or unverified tuples are replaced whole by
+// the baseline. Timeout remains a fallback. Stabilized profiles also pin OS and Arch.
 type ClaudeHeaderDefaults struct {
 	UserAgent              string `yaml:"user-agent" json:"user-agent"`
 	PackageVersion         string `yaml:"package-version" json:"package-version"`
