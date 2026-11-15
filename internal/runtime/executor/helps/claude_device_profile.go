@@ -30,6 +30,15 @@ const (
 	claudeDeviceProfileTTL                 = 7 * 24 * time.Hour
 	claudeDeviceProfileLockTTL             = 5 * time.Second
 	claudeDeviceProfileCleanupPeriod       = time.Hour
+
+	// Request headers can raise the shared baseline only this far above the
+	// configured floor, so a forged "verified" request cannot push an
+	// implausible tuple onto every cloaked client. Claude Code moved from
+	// 2.1.280 to 2.1.325, SDK 0.112 to 0.128 and runtime v26.3 to v26.12 in
+	// about two months; past these bounds, update the built-in floor.
+	maxObservedClaudePatchLead        = 100
+	maxObservedClaudePackageMinorLead = 40
+	maxObservedClaudeRuntimeMajorLead = 2
 )
 
 var (
@@ -172,7 +181,9 @@ func effectiveClaudeDeviceProfile(cfg *config.Config) ClaudeDeviceProfile {
 	observedClaudeDeviceProfileMu.RLock()
 	observed := observedClaudeDeviceProfile
 	observedClaudeDeviceProfileMu.RUnlock()
-	if !nativeClaudeDeviceProfileUsable(observed, baseline) || observed.version.Compare(baseline.version) <= 0 {
+	if !nativeClaudeDeviceProfileUsable(observed, baseline) ||
+		!withinObservedClaudeDeviceProfileBound(observed, baseline) ||
+		observed.version.Compare(baseline.version) <= 0 {
 		return baseline
 	}
 	return pinClaudeDeviceProfilePlatform(observed, baseline)
@@ -181,7 +192,8 @@ func effectiveClaudeDeviceProfile(cfg *config.Config) ClaudeDeviceProfile {
 // observeClaudeDeviceProfile raises the effective baseline to a verified native
 // client's tuple when that tuple is usable and newer than what is known.
 func observeClaudeDeviceProfile(candidate ClaudeDeviceProfile, cfg *config.Config) {
-	if !nativeClaudeDeviceProfileUsable(candidate, defaultClaudeDeviceProfile(cfg)) {
+	baseline := defaultClaudeDeviceProfile(cfg)
+	if !nativeClaudeDeviceProfileUsable(candidate, baseline) || !withinObservedClaudeDeviceProfileBound(candidate, baseline) {
 		return
 	}
 	observedClaudeDeviceProfileMu.Lock()
@@ -192,6 +204,30 @@ func observeClaudeDeviceProfile(candidate ClaudeDeviceProfile, cfg *config.Confi
 	observedClaudeDeviceProfile = candidate
 	log.Infof("claude device profile: verified native client raised the baseline to %s (package %s, runtime %s)",
 		candidate.UserAgent, candidate.PackageVersion, candidate.RuntimeVersion)
+}
+
+// withinObservedClaudeDeviceProfileBound reports whether a usable tuple is close
+// enough to the configured floor to be shared with other clients: the same
+// Claude Code major.minor line within maxObservedClaudePatchLead patches, the
+// same SDK major within maxObservedClaudePackageMinorLead minors, and a runtime
+// at most maxObservedClaudeRuntimeMajorLead majors ahead.
+func withinObservedClaudeDeviceProfileBound(candidate, baseline ClaudeDeviceProfile) bool {
+	if candidate.version.major != baseline.version.major ||
+		candidate.version.minor != baseline.version.minor ||
+		candidate.version.patch > baseline.version.patch+maxObservedClaudePatchLead {
+		return false
+	}
+	candidatePackage, okCandidatePackage := parseDottedVersion(candidate.PackageVersion)
+	baselinePackage, okBaselinePackage := parseDottedVersion(baseline.PackageVersion)
+	if !okCandidatePackage || !okBaselinePackage ||
+		candidatePackage.major != baselinePackage.major ||
+		candidatePackage.minor > baselinePackage.minor+maxObservedClaudePackageMinorLead {
+		return false
+	}
+	candidateRuntime, okCandidateRuntime := parseDottedVersion(candidate.RuntimeVersion)
+	baselineRuntime, okBaselineRuntime := parseDottedVersion(baseline.RuntimeVersion)
+	return okCandidateRuntime && okBaselineRuntime &&
+		candidateRuntime.major <= baselineRuntime.major+maxObservedClaudeRuntimeMajorLead
 }
 
 // mapStainlessOS maps runtime.GOOS to Stainless SDK OS names.

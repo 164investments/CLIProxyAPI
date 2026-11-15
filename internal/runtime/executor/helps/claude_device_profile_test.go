@@ -312,6 +312,40 @@ func TestVerifiedNewerClientRaisesCloakedBaseline(t *testing.T) {
 	}
 }
 
+func TestVerifiedClientOutsideLearningBoundDoesNotRaiseSharedBaseline(t *testing.T) {
+	for _, tc := range []struct {
+		name                               string
+		userAgent, packageVersion, runtime string
+	}{
+		{name: "patch far ahead", userAgent: "claude-cli/2.1.999 (external, cli)", packageVersion: "0.129.0", runtime: "v26.12.2"},
+		{name: "next minor line", userAgent: "claude-cli/2.2.0 (external, cli)", packageVersion: "0.129.0", runtime: "v26.12.2"},
+		{name: "package far ahead", userAgent: "claude-cli/2.1.330 (external, cli)", packageVersion: "0.999.0", runtime: "v26.12.2"},
+		{name: "package next major", userAgent: "claude-cli/2.1.330 (external, cli)", packageVersion: "1.0.0", runtime: "v26.12.2"},
+		{name: "runtime far ahead", userAgent: "claude-cli/2.1.330 (external, cli)", packageVersion: "0.129.0", runtime: "v99.0.0"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ResetClaudeDeviceProfileCache()
+			t.Cleanup(ResetClaudeDeviceProfileCache)
+			incoming := claudeDeviceHeaders(tc.userAgent)
+			incoming.Set("X-Stainless-Package-Version", tc.packageVersion)
+			incoming.Set("X-Stainless-Runtime-Version", tc.runtime)
+
+			// The client's own request still carries its own tuple...
+			verified, errRequest := http.NewRequest(http.MethodPost, "https://api.anthropic.com/v1/messages", nil)
+			if errRequest != nil {
+				t.Fatal(errRequest)
+			}
+			ApplyClaudeLegacyDeviceHeaders(verified, incoming, nil, true)
+			assertClaudeSoftwareTuple(t, verified.Header, tc.userAgent, tc.packageVersion, tc.runtime)
+
+			// ...but it is not shared with other clients.
+			if got := DefaultClaudeUserAgent(nil); got != defaultClaudeFingerprintUserAgent {
+				t.Fatalf("shared baseline = %q, want unchanged %q", got, defaultClaudeFingerprintUserAgent)
+			}
+		})
+	}
+}
+
 func TestApplyClaudeLegacyDeviceHeadersReplacesInvalidNativeSoftwareSignals(t *testing.T) {
 	ResetClaudeDeviceProfileCache()
 	request, errRequest := http.NewRequest(http.MethodPost, "https://api.anthropic.com/v1/messages", nil)
