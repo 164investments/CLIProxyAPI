@@ -58,6 +58,13 @@ func loadCodexClientModelsFromBytes(data []byte, source string) (bool, error) {
 	if err := ValidateCodexClientModelsJSON(data); err != nil {
 		return false, fmt.Errorf("%s: %w", source, err)
 	}
+	data, err := applyForkCodexClientModels(data)
+	if err != nil {
+		return false, fmt.Errorf("%s: %w", source, err)
+	}
+	if err = ValidateCodexClientModelsJSON(data); err != nil {
+		return false, fmt.Errorf("%s: with fork models: %w", source, err)
+	}
 
 	cloned := append([]byte(nil), data...)
 	codexClientCatalogStore.mu.Lock()

@@ -8,6 +8,7 @@ Go 1.26+ proxy server providing OpenAI/Gemini/Claude/Codex compatible APIs with 
 - Install: `scripts/install-custom-macos.sh` builds this checkout and the management console from `../Cli-Proxy-API-Management-Center` (or `CONSOLE_SOURCE_DIR`). It then restarts the launchd service `io.tstout.cliproxyapi-custom` on port 8318.
 - Team deploy (office Studio, user `hayden`): the live service is the system LaunchDaemon `com.hayden.cliproxyapi` (`KeepAlive`) running `~/.local/bin/cliproxyapi-custom`, and the Studio has no Go, so the install script does not apply there. Cross-compile with the script's ldflags and `GOOS=darwin GOARCH=arm64`, keep the old binary as `.previous`, swap the new one in, then send the process `SIGTERM` while no request is in flight; launchd starts the new binary. Shutdown closes open connections, so any request still running is dropped.
 - Production check: from the agent host run `~/.local/bin/claude-t3proxy -p "Reply with the single word: ok" --model claude-fable-5-2 --max-turns 1`, then check `~/.config/cliproxyapi-custom/logs/main.log` on the Studio for new errors.
+- Fork-only models: `internal/registry/models/fork_models.json` and `fork_codex_client_models.json` add models OpenAI has released but the upstream catalog (`router-for-me/models`, refreshed every 3 hours) does not list yet. Each entry is used only while the loaded catalog lacks its id; delete it once upstream lists the model.
 
 ## Commands
 ```bash
