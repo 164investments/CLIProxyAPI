@@ -252,28 +252,44 @@ func resolveClaudeContinuityTags(
 	return prevReq, promptID, cCtx, true
 }
 
+// claudeBillingFingerprintMessageText returns the caller's first user text. A
+// user turn made only of reminder text blocks (the opening turn CPA inserts in
+// front of relocated system turns) is skipped, so the fingerprint is the same
+// before and after relocation.
 func claudeBillingFingerprintMessageText(payload []byte) string {
-	idx := firstClaudeUserMessageIndex(payload)
-	if idx < 0 {
+	messages := gjson.GetBytes(payload, "messages")
+	if !messages.IsArray() {
 		return ""
 	}
-	content := gjson.GetBytes(payload, fmt.Sprintf("messages.%d.content", idx))
-	if content.Type == gjson.String {
-		return content.String()
-	}
-	if content.IsArray() {
+	for _, message := range messages.Array() {
+		if message.Get("role").String() != "user" {
+			continue
+		}
+		content := message.Get("content")
+		if content.Type == gjson.String {
+			return content.String()
+		}
+		if !content.IsArray() {
+			return ""
+		}
 		messageText := ""
+		remindersOnly := len(content.Array()) > 0
 		content.ForEach(func(_, part gjson.Result) bool {
-			if part.Get("type").String() == "text" {
-				text := part.Get("text").String()
-				if !isClaudeCodeCurrentDateReminder(text) && !isClaudeCodeContextReminder(text) {
-					messageText = text
-					return false
-				}
+			if part.Get("type").String() != "text" {
+				remindersOnly = false
+				return true
+			}
+			text := part.Get("text").String()
+			if !isClaudeCodeCurrentDateReminder(text) && !isClaudeCodeContextReminder(text) {
+				messageText = text
+				remindersOnly = false
+				return false
 			}
 			return true
 		})
-		return messageText
+		if !remindersOnly {
+			return messageText
+		}
 	}
 	return ""
 }
@@ -316,9 +332,9 @@ func checkSystemInstructionsWithMode(payload []byte, strictMode bool) []byte {
 
 // checkSystemInstructionsWithSigningMode keeps the top-level system in Claude
 // Code's minimal CLI shape. Each caller system block is preserved as a separate
-// mid-conversation system message after the first user turn, where supported
-// Claude models give it operator-level authority without changing the cached
-// top-level prefix.
+// mid-conversation system message ahead of the caller's first user turn (see
+// insertClaudeMidConversationSystemMessages), where supported Claude models give
+// it operator-level authority without changing the cached top-level prefix.
 func checkSystemInstructionsWithSigningMode(payload []byte, strictMode bool, cchSigning bool, version, entrypoint, workload string) []byte {
 	return checkSystemInstructionsWithSigningModeAt(payload, strictMode, cchSigning, version, entrypoint, workload, claudeCodeLocalDate(time.Now()), false, "", "")
 }
@@ -366,6 +382,7 @@ func checkSystemInstructionsWithSigningModeAt(
 		return injectClaudeCodeCurrentDate(payload, currentDate)
 	}
 
+	forwardedSystemParts := collectForwardedClaudeSystemPromptParts(system)
 	forwardedSystemBlocks := collectForwardedClaudeSystemPromptBlocks(system)
 	if len(forwardedSystemBlocks) == 0 {
 		return injectClaudeCodeCurrentDate(payload, currentDate)
@@ -383,7 +400,7 @@ func checkSystemInstructionsWithSigningModeAt(
 		// Unknown and future model IDs optimistically use the authoritative
 		// mid-conversation system role. Only empirically unsupported legacy IDs
 		// stay on the user-reminder compatibility path.
-		payload = insertClaudeMidConversationSystemMessages(payload, forwardedSystemBlocks)
+		payload = insertClaudeMidConversationSystemMessages(payload, forwardedSystemParts, currentDate)
 	}
 	return injectClaudeCodeCurrentDate(payload, currentDate)
 }
@@ -403,7 +420,9 @@ func relocateClaudeSystemPromptForCountTokens(payload []byte, strictMode bool) [
 	// Strict mode drops caller prompts on the Messages path, so it must not
 	// reintroduce them here either.
 	var forwardedSystemBlocks []string
+	var forwardedSystemParts []forwardedClaudeSystemBlock
 	if !strictMode {
+		forwardedSystemParts = collectForwardedClaudeSystemPromptParts(system)
 		forwardedSystemBlocks = collectForwardedClaudeSystemPromptBlocks(system)
 	}
 	if len(forwardedSystemBlocks) == 0 {
@@ -430,7 +449,7 @@ func relocateClaudeSystemPromptForCountTokens(payload []byte, strictMode bool) [
 	if claudeUsesLegacySystemReminder(payload) {
 		return prependClaudeSystemRemindersToFirstUserMessage(payload, forwardedSystemBlocks)
 	}
-	return insertClaudeMidConversationSystemMessages(payload, forwardedSystemBlocks)
+	return insertClaudeMidConversationSystemMessages(payload, forwardedSystemParts, claudeCodeLocalDate(time.Now()))
 }
 
 // claudeLegacySystemReminderModels lists the official Anthropic model IDs and
@@ -590,24 +609,40 @@ func validateClaudeCallerSystemBlocks(system gjson.Result) error {
 	return blockErr
 }
 
+// forwardedClaudeSystemBlock is one caller system block on its way into
+// messages. cached records whether the caller put a cache breakpoint on it.
+type forwardedClaudeSystemBlock struct {
+	text   string
+	cached bool
+}
+
 func collectForwardedClaudeSystemPromptBlocks(system gjson.Result) []string {
-	var blocks []string
-	appendText := func(text string) {
+	parts := collectForwardedClaudeSystemPromptParts(system)
+	blocks := make([]string, 0, len(parts))
+	for _, part := range parts {
+		blocks = append(blocks, part.text)
+	}
+	return blocks
+}
+
+func collectForwardedClaudeSystemPromptParts(system gjson.Result) []forwardedClaudeSystemBlock {
+	var blocks []forwardedClaudeSystemBlock
+	appendText := func(text string, cached bool) {
 		if strings.TrimSpace(text) == "" || util.IsClaudeCodeAttributionSystemText(text) || text == claudeCodeCLIIdentity {
 			return
 		}
-		blocks = append(blocks, text)
+		blocks = append(blocks, forwardedClaudeSystemBlock{text: text, cached: cached})
 	}
 
 	if system.IsArray() {
 		system.ForEach(func(_, part gjson.Result) bool {
 			if part.Get("type").String() == "text" {
-				appendText(part.Get("text").String())
+				appendText(part.Get("text").String(), part.Get("cache_control").Exists())
 			}
 			return true
 		})
 	} else if system.Type == gjson.String {
-		appendText(system.String())
+		appendText(system.String(), false)
 	}
 	return blocks
 }
@@ -753,9 +788,31 @@ func claudeHistoryHasAdvisorCallOrResult(payload []byte) bool {
 	return false
 }
 
-func insertClaudeMidConversationSystemMessages(payload []byte, texts []string) []byte {
+// claudeCallerSystemAck is the fixed assistant turn that follows relocated
+// caller system turns. Anthropic accepts a role=system turn only right before an
+// assistant turn or at the end of messages.
+const claudeCallerSystemAck = "Understood."
+
+// insertClaudeMidConversationSystemMessages relocates caller system blocks into
+// messages ahead of the caller's first user turn:
+//
+//	user (currentDate reminder) -> system blocks -> assistant ack -> caller turns
+//
+// Everything up to the last system block is the same for every conversation of
+// that caller on that day, so the caller's instructions are cached once and read
+// back by later conversations. Placing them after the caller's first user turn
+// put a per-conversation message in front of them, so every new conversation
+// wrote them to the cache again.
+//
+// A system turn keeps a cache breakpoint when the caller marked that block. When
+// the caller marked none, every system turn gets one.
+//
+// When messages do not start with a user turn (a history that opens on an
+// assistant tool_use), the system turns go after the first run of user turns
+// instead, so a tool_use stays next to its tool_result.
+func insertClaudeMidConversationSystemMessages(payload []byte, blocks []forwardedClaudeSystemBlock, currentDate string) []byte {
 	firstUserIdx := firstClaudeUserMessageIndex(payload)
-	if firstUserIdx < 0 || len(texts) == 0 {
+	if firstUserIdx < 0 || len(blocks) == 0 {
 		return payload
 	}
 
@@ -764,15 +821,56 @@ func insertClaudeMidConversationSystemMessages(payload []byte, texts []string) [
 		return payload
 	}
 	messageBlocks := messages.Array()
-	insertAt := firstUserIdx + 1
-	for insertAt < len(messageBlocks) && messageBlocks[insertAt].Get("role").String() == "user" {
-		insertAt++
+	systemTurns := claudeRelocatedSystemTurns(blocks)
+	if firstUserIdx != 0 {
+		return insertClaudeSystemTurnsAfterFirstUserRun(payload, messageBlocks, firstUserIdx, blocks, systemTurns)
 	}
-	if len(messageBlocks)-insertAt >= len(texts) {
+	if claudeHasRelocatedSystemTurns(messageBlocks, firstUserIdx, blocks) {
+		return payload
+	}
+
+	inserted := make([]string, 0, len(blocks)+2)
+	inserted = append(inserted, `{"role":"user","content":[`+buildTextBlock(claudeCodeCurrentDateReminder(currentDate), nil)+`]}`)
+	inserted = append(inserted, systemTurns...)
+	inserted = append(inserted, `{"role":"assistant","content":[`+buildTextBlock(claudeCallerSystemAck, nil)+`]}`)
+
+	rawMessages := make([]string, 0, len(messageBlocks)+len(inserted))
+	for idx, message := range messageBlocks {
+		if idx == firstUserIdx {
+			rawMessages = append(rawMessages, inserted...)
+		}
+		rawMessages = append(rawMessages, message.Raw)
+	}
+	payload, _ = sjson.SetRawBytes(payload, "messages", []byte("["+strings.Join(rawMessages, ",")+"]"))
+	return payload
+}
+
+func claudeRelocatedSystemTurns(blocks []forwardedClaudeSystemBlock) []string {
+	anyCached := false
+	for _, block := range blocks {
+		anyCached = anyCached || block.cached
+	}
+	turns := make([]string, 0, len(blocks))
+	for _, block := range blocks {
+		var cacheControl *claudeCacheControl
+		if block.cached || !anyCached {
+			cacheControl = &claudeCodeCacheControl
+		}
+		turns = append(turns, `{"role":"system","content":[`+buildTextBlock(block.text, cacheControl)+`]}`)
+	}
+	return turns
+}
+
+// insertClaudeSystemTurnsAfterFirstUserRun is the placement for messages that
+// open on an assistant turn: after the first run of user turns, before the next
+// assistant turn.
+func insertClaudeSystemTurnsAfterFirstUserRun(payload []byte, messageBlocks []gjson.Result, firstUserIdx int, blocks []forwardedClaudeSystemBlock, systemTurns []string) []byte {
+	insertAt := claudeFirstUserRunEnd(messageBlocks, firstUserIdx)
+	if len(messageBlocks)-insertAt >= len(blocks) {
 		matches := true
-		for idx, text := range texts {
+		for idx, block := range blocks {
 			message := messageBlocks[insertAt+idx]
-			if message.Get("role").String() != "system" || claudeMessageContentText(message.Get("content")) != text {
+			if message.Get("role").String() != "system" || claudeMessageContentText(message.Get("content")) != block.text {
 				matches = false
 				break
 			}
@@ -782,23 +880,43 @@ func insertClaudeMidConversationSystemMessages(payload []byte, texts []string) [
 		}
 	}
 
-	systemMessages := make([]string, 0, len(texts))
-	for _, text := range texts {
-		content := "[" + buildTextBlock(text, &claudeCodeCacheControl) + "]"
-		systemMessages = append(systemMessages, `{"role":"system","content":`+content+"}")
-	}
-	rawMessages := make([]string, 0, len(messageBlocks)+len(systemMessages))
+	rawMessages := make([]string, 0, len(messageBlocks)+len(systemTurns))
 	for idx, message := range messageBlocks {
 		if idx == insertAt {
-			rawMessages = append(rawMessages, systemMessages...)
+			rawMessages = append(rawMessages, systemTurns...)
 		}
 		rawMessages = append(rawMessages, message.Raw)
 	}
 	if insertAt == len(messageBlocks) {
-		rawMessages = append(rawMessages, systemMessages...)
+		rawMessages = append(rawMessages, systemTurns...)
 	}
 	payload, _ = sjson.SetRawBytes(payload, "messages", []byte("["+strings.Join(rawMessages, ",")+"]"))
 	return payload
+}
+
+func claudeFirstUserRunEnd(messages []gjson.Result, firstUserIdx int) int {
+	end := firstUserIdx + 1
+	for end < len(messages) && messages[end].Get("role").String() == "user" {
+		end++
+	}
+	return end
+}
+
+// claudeHasRelocatedSystemTurns reports whether messages already carry the
+// relocated system turns, so a payload that passes through twice is unchanged.
+func claudeHasRelocatedSystemTurns(messages []gjson.Result, firstUserIdx int, blocks []forwardedClaudeSystemBlock) bool {
+	start := firstUserIdx + 1
+	if start+len(blocks) >= len(messages) {
+		return false
+	}
+	for idx, block := range blocks {
+		message := messages[start+idx]
+		if message.Get("role").String() != "system" || claudeMessageContentText(message.Get("content")) != block.text {
+			return false
+		}
+	}
+	ack := messages[start+len(blocks)]
+	return ack.Get("role").String() == "assistant" && claudeMessageContentText(ack.Get("content")) == claudeCallerSystemAck
 }
 
 func claudeMessageContentText(content gjson.Result) string {
@@ -843,21 +961,52 @@ func captureClaudeCodeSystemPlacement(before, after []byte, cloaked bool) claude
 
 	beforeMessages := gjson.GetBytes(before, "messages").Array()
 	afterMessages := gjson.GetBytes(after, "messages").Array()
-	if len(afterMessages) != len(beforeMessages)+len(texts) {
-		return claudeCodeSystemPlacementState{}
-	}
 	firstUserIdx := firstClaudeUserMessageIndex(before)
 	if firstUserIdx < 0 {
 		return claudeCodeSystemPlacementState{}
 	}
-	insertAt := firstUserIdx + 1
-	for insertAt < len(beforeMessages) && beforeMessages[insertAt].Get("role").String() == "user" {
-		insertAt++
+	if firstUserIdx != 0 {
+		return captureClaudeSystemTurnsAfterFirstUserRun(beforeMessages, afterMessages, firstUserIdx, texts)
 	}
-	if insertAt+len(texts) > len(afterMessages) {
+	// CPA inserts an opening user turn, one system turn per block and an ack.
+	// The opening user turn stays on reconcile: it holds the currentDate
+	// reminder and receives the legacy <system-reminder> blocks.
+	if len(afterMessages) != len(beforeMessages)+len(texts)+2 {
+		return claudeCodeSystemPlacementState{}
+	}
+	insertAt := firstUserIdx + 1
+	if insertAt+len(texts) >= len(afterMessages) {
 		return claudeCodeSystemPlacementState{}
 	}
 
+	insertedRaw := make([]string, 0, len(texts)+1)
+	for idx, text := range texts {
+		message := afterMessages[insertAt+idx]
+		if message.Get("role").String() != "system" || claudeMessageContentText(message.Get("content")) != text {
+			return claudeCodeSystemPlacementState{}
+		}
+		insertedRaw = append(insertedRaw, message.Raw)
+	}
+	ack := afterMessages[insertAt+len(texts)]
+	if ack.Get("role").String() != "assistant" || claudeMessageContentText(ack.Get("content")) != claudeCallerSystemAck {
+		return claudeCodeSystemPlacementState{}
+	}
+	insertedRaw = append(insertedRaw, ack.Raw)
+	return claudeCodeSystemPlacementState{
+		insertAt:    insertAt,
+		insertedRaw: insertedRaw,
+		texts:       append([]string(nil), texts...),
+	}
+}
+
+func captureClaudeSystemTurnsAfterFirstUserRun(beforeMessages, afterMessages []gjson.Result, firstUserIdx int, texts []string) claudeCodeSystemPlacementState {
+	if len(afterMessages) != len(beforeMessages)+len(texts) {
+		return claudeCodeSystemPlacementState{}
+	}
+	insertAt := claudeFirstUserRunEnd(beforeMessages, firstUserIdx)
+	if insertAt+len(texts) > len(afterMessages) {
+		return claudeCodeSystemPlacementState{}
+	}
 	insertedRaw := make([]string, len(texts))
 	for idx, text := range texts {
 		message := afterMessages[insertAt+idx]
@@ -1925,11 +2074,22 @@ func enforceCacheControlLimit(payload []byte, maxBlocks int) []byte {
 		return payload
 	}
 
-	messages := gjson.GetBytes(payload, "messages")
-	if messages.IsArray() {
+	// Breakpoints on role=system turns cover caller instructions shared across
+	// conversations, so they go last among message breakpoints.
+	for _, systemTurns := range []bool{false, true} {
+		if excess <= 0 {
+			break
+		}
+		messages := gjson.GetBytes(payload, "messages")
+		if !messages.IsArray() {
+			break
+		}
 		messages.ForEach(func(msgIdx, msg gjson.Result) bool {
 			if excess <= 0 {
 				return false
+			}
+			if (msg.Get("role").String() == "system") != systemTurns {
+				return true
 			}
 			content := msg.Get("content")
 			if !content.IsArray() {

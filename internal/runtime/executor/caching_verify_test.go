@@ -640,7 +640,7 @@ func TestUpgradeClaudeCacheControlTTL(t *testing.T) {
 	})
 }
 
-// End-to-end guard for #4855. Cloaking stamps the first real user block, and the
+// End-to-end guard for #4855. Cloaking stamps an early breakpoint, and the
 // old global `countCacheControls(body) == 0` gate then skipped every remaining
 // section, freezing the rolling breakpoint on messages[0] for the whole
 // conversation. Section-independent ensure has to keep that breakpoint advancing
@@ -690,9 +690,9 @@ func TestClaudeExecutorCloakedRollingCacheBreakpointAdvances(t *testing.T) {
 	if want := int(gjson.GetBytes(longBody, "messages.#").Int()) - 1; longMarked != want {
 		t.Fatalf("rolling breakpoint at message %d, want final message %d: %s", longMarked, want, longBody)
 	}
-	// Cloaking's own first-user marker must still be present alongside it.
-	if !gjson.GetBytes(longBody, "messages.0.content.1.cache_control").Exists() {
-		t.Fatalf("cloak first-user breakpoint lost: %s", longBody)
+	// The relocated caller system turn keeps its own breakpoint alongside it.
+	if gjson.GetBytes(longBody, "messages.1.role").String() != "system" || !gjson.GetBytes(longBody, "messages.1.content.0.cache_control").Exists() {
+		t.Fatalf("relocated system turn breakpoint lost: %s", longBody)
 	}
 	if total := countCacheControls(longBody); total > 4 {
 		t.Fatalf("cache_control count = %d, want at most 4: %s", total, longBody)
