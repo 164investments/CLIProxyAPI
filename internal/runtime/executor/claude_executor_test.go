@@ -1164,12 +1164,7 @@ func TestClaudeExecutor_CopiedVSCodeAgentSDKHeadersWithoutMetadataAreCloaked(t *
 	if got := gjson.GetBytes(seenBody, "system.#").Int(); got != 2 {
 		t.Fatalf("system block count = %d, want billing and CLI identity only", got)
 	}
-	content := gjson.GetBytes(seenBody, "messages.0.content").Array()
-	if len(content) != 2 {
-		t.Fatalf("messages[0].content has %d blocks, want currentDate and user text", len(content))
-	}
-	assertClaudeCodeCurrentDateBlock(t, content[0])
-	assertEphemeralUserTextBlock(t, content[1], "x", "")
+	assertClaudeRelocatedOpening(t, seenBody, 2, "x")
 	assertClaudeMidConversationSystemMessage(t, seenBody, 1, "spoofed-system", "")
 }
 
@@ -3892,6 +3887,26 @@ func assertClaudeMidConversationSystemMessage(t *testing.T, body []byte, message
 	}
 }
 
+// assertClaudeRelocatedOpening checks the layout CPA builds in front of the
+// caller's first user turn: a currentDate-only user turn, the system turns, then
+// the fixed assistant ack at ackIndex and the caller's own first turn after it.
+func assertClaudeRelocatedOpening(t *testing.T, body []byte, ackIndex int, wantUser string) {
+	t.Helper()
+	opening := gjson.GetBytes(body, "messages.0.content").Array()
+	if len(opening) != 1 {
+		t.Fatalf("opening turn has %d blocks, want currentDate only: %s", len(opening), body)
+	}
+	assertClaudeCodeCurrentDateBlock(t, opening[0])
+	ack := gjson.GetBytes(body, fmt.Sprintf("messages.%d", ackIndex))
+	if ack.Get("role").String() != "assistant" || claudeMessageContentText(ack.Get("content")) != claudeCallerSystemAck {
+		t.Fatalf("messages[%d] = %s, want the fixed assistant ack", ackIndex, ack.Raw)
+	}
+	user := gjson.GetBytes(body, fmt.Sprintf("messages.%d", ackIndex+1))
+	if user.Get("role").String() != "user" || claudeMessageContentText(user.Get("content")) != wantUser {
+		t.Fatalf("messages[%d] = %s, want caller's first turn %q", ackIndex+1, user.Raw, wantUser)
+	}
+}
+
 func assertClaudeLegacySystemReminderLayout(t *testing.T, body []byte, wantSystem, wantUser, wantTTL string) {
 	t.Helper()
 	if got := gjson.GetBytes(body, "system.#").Int(); got != 2 {
@@ -4139,12 +4154,7 @@ func TestCheckSystemInstructionsWithMode_StringSystemPreserved(t *testing.T) {
 	if blocks[1].Get("cache_control.ttl").Exists() {
 		t.Fatalf("blocks[1] cache_control must not carry a default ttl: %s", blocks[1].Raw)
 	}
-	content := gjson.GetBytes(out, "messages.0.content").Array()
-	if len(content) != 2 {
-		t.Fatalf("messages[0].content has %d blocks, want currentDate and user text: %s", len(content), out)
-	}
-	assertClaudeCodeCurrentDateBlock(t, content[0])
-	assertEphemeralUserTextBlock(t, content[1], "hi", "")
+	assertClaudeRelocatedOpening(t, out, 2, "hi")
 	assertClaudeMidConversationSystemMessage(t, out, 1, "You are a helpful assistant.", "")
 }
 
@@ -4178,12 +4188,7 @@ func TestCheckSystemInstructionsWithMode_FutureModelDefaultsToMidSystem(t *testi
 	if got := gjson.GetBytes(out, "system.#").Int(); got != 2 {
 		t.Fatalf("top-level system block count = %d, want 2", got)
 	}
-	content := gjson.GetBytes(out, "messages.0.content").Array()
-	if len(content) != 2 {
-		t.Fatalf("user content has %d blocks, want currentDate and user text", len(content))
-	}
-	assertClaudeCodeCurrentDateBlock(t, content[0])
-	assertEphemeralUserTextBlock(t, content[1], "hi", "")
+	assertClaudeRelocatedOpening(t, out, 2, "hi")
 	assertClaudeMidConversationSystemMessage(t, out, 1, "future instructions", "")
 }
 
@@ -4281,12 +4286,7 @@ func TestCheckSystemInstructionsWithMode_ArraySystemStillWorks(t *testing.T) {
 	if len(blocks) != 2 {
 		t.Fatalf("expected 2 top-level system blocks, got %d", len(blocks))
 	}
-	content := gjson.GetBytes(out, "messages.0.content").Array()
-	if len(content) != 2 {
-		t.Fatalf("messages[0].content has %d blocks, want currentDate and user text", len(content))
-	}
-	assertClaudeCodeCurrentDateBlock(t, content[0])
-	assertEphemeralUserTextBlock(t, content[1], "hi", "")
+	assertClaudeRelocatedOpening(t, out, 2, "hi")
 	assertClaudeMidConversationSystemMessage(t, out, 1, "Be concise.", "")
 }
 
@@ -4297,17 +4297,16 @@ func TestCheckSystemInstructionsWithMode_ArraySystemKeepsBlocksAsSeparateMessage
 		`"messages":[{"role":"user","content":"hi"}]}`)
 
 	out := checkSystemInstructionsWithMode(payload, false)
-	if got := gjson.GetBytes(out, "messages.#").Int(); got != 3 {
-		t.Fatalf("message count = %d, want user and two separate system messages: %s", got, out)
-	}
-	content := gjson.GetBytes(out, "messages.0.content").Array()
-	if len(content) != 2 {
-		t.Fatalf("user content has %d blocks, want currentDate and user text: %s", len(content), out)
-	}
-	assertClaudeCodeCurrentDateBlock(t, content[0])
-	assertEphemeralUserTextBlock(t, content[1], "hi", "")
+	assertClaudeMessageRoles(t, out, "user", "system", "system", "assistant", "user")
+	assertClaudeRelocatedOpening(t, out, 3, "hi")
 	assertClaudeMidConversationSystemMessage(t, out, 1, "first guidance", "")
-	assertClaudeMidConversationSystemMessage(t, out, 2, "second guidance", "")
+	// Only the block the caller marked keeps a breakpoint.
+	if gjson.GetBytes(out, "messages.2.content.0.cache_control").Exists() {
+		t.Fatalf("unmarked caller block got a breakpoint: %s", out)
+	}
+	if got := gjson.GetBytes(out, "messages.2.content.0.text").String(); got != "second guidance" {
+		t.Fatalf("messages[2] text = %q, want second guidance", got)
+	}
 }
 
 func TestRelocateClaudeSystemPromptForCountTokensKeepsBlocksSeparate(t *testing.T) {
@@ -4347,9 +4346,7 @@ func TestRelocateClaudeSystemPromptForCountTokensKeepsBlocksSeparate(t *testing.
 				}
 				return
 			}
-			if got := gjson.GetBytes(out, "messages.#").Int(); got != 3 {
-				t.Fatalf("message count = %d, want user and two system messages: %s", got, out)
-			}
+			assertClaudeMessageRoles(t, out, "user", "system", "system", "assistant", "user")
 			assertClaudeMidConversationSystemMessage(t, out, 1, "first guidance", "")
 			assertClaudeMidConversationSystemMessage(t, out, 2, "second guidance", "")
 		})
@@ -4610,9 +4607,7 @@ func TestCheckSystemInstructionsWithMode_NormalTextWithAdvisorWordDoesNotBypassM
 	out := checkSystemInstructionsWithMode(payload, false)
 
 	// Since there is no advisor tool invocation/result, normal mid-conversation system insertion occurs.
-	if got := gjson.GetBytes(out, "messages.#").Int(); got != 3 {
-		t.Fatalf("messages count = %d, want 3 (user + 2 system messages): %s", got, out)
-	}
+	assertClaudeMessageRoles(t, out, "user", "system", "system", "assistant", "user")
 	assertClaudeMidConversationSystemMessage(t, out, 1, "first guidance", "")
 	assertClaudeMidConversationSystemMessage(t, out, 2, "second guidance", "")
 }
@@ -4815,12 +4810,7 @@ func TestCheckSystemInstructionsWithMode_StringWithSpecialChars(t *testing.T) {
 	if got := gjson.GetBytes(out, "system.#").Int(); got != 2 {
 		t.Fatalf("top-level system block count = %d, want 2", got)
 	}
-	content := gjson.GetBytes(out, "messages.0.content").Array()
-	if len(content) != 2 {
-		t.Fatalf("messages[0].content has %d blocks, want 2", len(content))
-	}
-	assertClaudeCodeCurrentDateBlock(t, content[0])
-	assertEphemeralUserTextBlock(t, content[1], "hi", "")
+	assertClaudeRelocatedOpening(t, out, 2, "hi")
 	assertClaudeMidConversationSystemMessage(t, out, 1, wantSystem, "")
 }
 
@@ -4847,18 +4837,13 @@ func TestCheckSystemInstructionsWithSigningMode_LongPromptIsExactAndIdempotent(t
 	if got := gjson.GetBytes(first, "system.#").Int(); got != 2 {
 		t.Fatalf("top-level system block count = %d, want 2", got)
 	}
-	if got := gjson.GetBytes(first, "messages.#").Int(); got != 2 {
-		t.Fatalf("message count = %d, want user then system", got)
-	}
-	content := gjson.GetBytes(first, "messages.0.content").Array()
-	if len(content) != 2 {
-		t.Fatalf("user content has %d blocks, want currentDate and user text", len(content))
-	}
-	assertClaudeCodeCurrentDateBlock(t, content[0])
-	assertEphemeralUserTextBlock(t, content[1], "hello", "")
+	assertClaudeMessageRoles(t, first, "user", "system", "assistant", "user")
+	assertClaudeRelocatedOpening(t, first, 2, "hello")
 	assertClaudeMidConversationSystemMessage(t, first, 1, wantSystem, "")
-	if strings.Contains(content[0].Get("text").String(), "PI_SYSTEM_BEGIN") || strings.Contains(content[1].Get("text").String(), "PI_SYSTEM_BEGIN") {
-		t.Fatal("caller system prompt leaked into the user content blocks")
+	for _, path := range []string{"messages.0.content", "messages.3.content"} {
+		if strings.Contains(gjson.GetBytes(first, path).Raw, "PI_SYSTEM_BEGIN") {
+			t.Fatalf("caller system prompt leaked into %s", path)
+		}
 	}
 	if !bytes.Contains(first, []byte(`<system-reminder>`)) || bytes.Contains(first, []byte(`\u003csystem-reminder`)) {
 		t.Fatalf("currentDate reminder angle brackets must remain literal JSON bytes")
@@ -7883,12 +7868,7 @@ func TestClaudeExecutor_ExecuteOAuthCustomToolMCPAliasRoundTrip(t *testing.T) {
 	if got := gjson.GetBytes(upstreamBody, "system.#").Int(); got != 2 {
 		t.Fatalf("Messages top-level system block count = %d, want 2", got)
 	}
-	content := gjson.GetBytes(upstreamBody, "messages.0.content").Array()
-	if len(content) != 2 {
-		t.Fatalf("Messages first user content has %d blocks, want currentDate and user text", len(content))
-	}
-	assertClaudeCodeCurrentDateBlock(t, content[0])
-	assertEphemeralUserTextBlock(t, content[1], "search", "1h")
+	assertClaudeRelocatedOpening(t, upstreamBody, 2, "search")
 	assertClaudeMidConversationSystemMessage(t, upstreamBody, 1, "messages-system-prompt", "1h")
 }
 
@@ -7960,12 +7940,7 @@ func TestClaudeExecutor_ExecuteStreamOAuthCustomToolMCPAliasRoundTrip(t *testing
 	if got := gjson.GetBytes(upstreamBody, "system.#").Int(); got != 2 {
 		t.Fatalf("streaming top-level system block count = %d, want 2", got)
 	}
-	content := gjson.GetBytes(upstreamBody, "messages.0.content").Array()
-	if len(content) != 2 {
-		t.Fatalf("streaming first user content has %d blocks, want currentDate and user text", len(content))
-	}
-	assertClaudeCodeCurrentDateBlock(t, content[0])
-	assertEphemeralUserTextBlock(t, content[1], "fetch", "1h")
+	assertClaudeRelocatedOpening(t, upstreamBody, 2, "fetch")
 	assertClaudeMidConversationSystemMessage(t, upstreamBody, 1, "stream-system-prompt", "1h")
 	assertClaudeCredentialIdentity(t, upstreamBody, upstreamHeaders, deviceIDs, "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa")
 	if !strings.Contains(downstream.String(), `"name":"fetch_url"`) {
@@ -8005,16 +7980,35 @@ func TestPrependClaudeSystemReminders_FollowsToolResultsAndIsIdempotent(t *testi
 	}
 }
 
+func claudeTestSystemBlocks(texts ...string) []forwardedClaudeSystemBlock {
+	blocks := make([]forwardedClaudeSystemBlock, 0, len(texts))
+	for _, text := range texts {
+		blocks = append(blocks, forwardedClaudeSystemBlock{text: text})
+	}
+	return blocks
+}
+
+func assertClaudeMessageRoles(t *testing.T, body []byte, wantRoles ...string) {
+	t.Helper()
+	roles := gjson.GetBytes(body, "messages.#.role").Array()
+	if len(roles) != len(wantRoles) {
+		t.Fatalf("message count = %d, want %d: %s", len(roles), len(wantRoles), body)
+	}
+	for idx, wantRole := range wantRoles {
+		if got := roles[idx].String(); got != wantRole {
+			t.Fatalf("messages[%d].role = %q, want %q: %s", idx, got, wantRole, body)
+		}
+	}
+}
+
 func TestInsertClaudeMidConversationSystemMessages_FollowsToolResultUserTurn(t *testing.T) {
 	payload := []byte(`{"messages":[` +
 		`{"role":"assistant","content":[{"type":"tool_use","id":"toolu_1","name":"Read","input":{}}]},` +
 		`{"role":"user","content":[{"type":"tool_result","tool_use_id":"toolu_1","content":"ok"}]}` +
 		`]}`)
 
-	out := insertClaudeMidConversationSystemMessages(payload, []string{"guidance"})
-	if got := gjson.GetBytes(out, "messages.#").Int(); got != 3 {
-		t.Fatalf("message count = %d, want 3: %s", got, out)
-	}
+	out := insertClaudeMidConversationSystemMessages(payload, claudeTestSystemBlocks("guidance"), "2026-11-18")
+	assertClaudeMessageRoles(t, out, "assistant", "user", "system")
 	blocks := gjson.GetBytes(out, "messages.1.content")
 	if got := blocks.Get("0.type").String(); got != "tool_result" {
 		t.Fatalf("first block type = %q, want tool_result: %s", got, out)
@@ -8025,61 +8019,106 @@ func TestInsertClaudeMidConversationSystemMessages_FollowsToolResultUserTurn(t *
 	assertClaudeMidConversationSystemMessage(t, out, 2, "guidance", "")
 }
 
-func TestInsertClaudeMidConversationSystemMessages_PrecedesExistingAssistantTurn(t *testing.T) {
+func TestInsertClaudeMidConversationSystemMessages_PrecedesFirstUserTurn(t *testing.T) {
 	payload := []byte(`{"messages":[` +
 		`{"role":"user","content":"hello"},` +
 		`{"role":"assistant","content":"answer"},` +
 		`{"role":"user","content":"continue"}` +
 		`]}`)
 
-	out := insertClaudeMidConversationSystemMessages(payload, []string{"guidance"})
-	roles := gjson.GetBytes(out, "messages.#.role").Array()
-	wantRoles := []string{"user", "system", "assistant", "user"}
-	if len(roles) != len(wantRoles) {
-		t.Fatalf("message count = %d, want %d: %s", len(roles), len(wantRoles), out)
-	}
-	for idx, wantRole := range wantRoles {
-		if got := roles[idx].String(); got != wantRole {
-			t.Fatalf("messages[%d].role = %q, want %q", idx, got, wantRole)
-		}
+	out := insertClaudeMidConversationSystemMessages(payload, claudeTestSystemBlocks("guidance"), "2026-11-18")
+	assertClaudeMessageRoles(t, out, "user", "system", "assistant", "user", "assistant", "user")
+	if got := gjson.GetBytes(out, "messages.0.content.0.text").String(); got != claudeCodeCurrentDateReminder("2026-11-18") {
+		t.Fatalf("opening turn = %q, want the currentDate reminder", got)
 	}
 	assertClaudeMidConversationSystemMessage(t, out, 1, "guidance", "")
+	if got := gjson.GetBytes(out, "messages.2.content.0.text").String(); got != claudeCallerSystemAck {
+		t.Fatalf("ack = %q, want %q", got, claudeCallerSystemAck)
+	}
+	if got := gjson.GetBytes(out, "messages.3.content").String(); got != "hello" {
+		t.Fatalf("caller's first turn = %q, want hello", got)
+	}
 }
 
-func TestInsertClaudeMidConversationSystemMessages_FollowsConsecutiveUserRun(t *testing.T) {
+func TestInsertClaudeMidConversationSystemMessages_KeepsConsecutiveUserRunTogether(t *testing.T) {
 	payload := []byte(`{"messages":[` +
 		`{"role":"user","content":"first"},` +
 		`{"role":"user","content":"second"},` +
 		`{"role":"assistant","content":"answer"}` +
 		`]}`)
 
-	out := insertClaudeMidConversationSystemMessages(payload, []string{"guidance"})
-	roles := gjson.GetBytes(out, "messages.#.role").Array()
-	wantRoles := []string{"user", "user", "system", "assistant"}
-	if len(roles) != len(wantRoles) {
-		t.Fatalf("message count = %d, want %d: %s", len(roles), len(wantRoles), out)
-	}
-	for idx, wantRole := range wantRoles {
-		if got := roles[idx].String(); got != wantRole {
-			t.Fatalf("messages[%d].role = %q, want %q", idx, got, wantRole)
-		}
-	}
-	assertClaudeMidConversationSystemMessage(t, out, 2, "guidance", "")
+	out := insertClaudeMidConversationSystemMessages(payload, claudeTestSystemBlocks("guidance"), "2026-11-18")
+	assertClaudeMessageRoles(t, out, "user", "system", "assistant", "user", "user", "assistant")
+	assertClaudeMidConversationSystemMessage(t, out, 1, "guidance", "")
 }
 
 func TestInsertClaudeMidConversationSystemMessages_IsIdempotent(t *testing.T) {
 	payload := []byte(`{"messages":[{"role":"user","content":"hello"}]}`)
-	texts := []string{"first guidance", "second guidance"}
-	first := insertClaudeMidConversationSystemMessages(payload, texts)
-	second := insertClaudeMidConversationSystemMessages(first, texts)
+	blocks := claudeTestSystemBlocks("first guidance", "second guidance")
+	first := insertClaudeMidConversationSystemMessages(payload, blocks, "2026-11-18")
+	second := insertClaudeMidConversationSystemMessages(first, blocks, "2026-11-18")
 	if !bytes.Equal(first, second) {
 		t.Fatalf("mid-conversation system insertion is not idempotent:\nfirst:  %s\nsecond: %s", first, second)
 	}
-	if got := gjson.GetBytes(first, "messages.#").Int(); got != 3 {
-		t.Fatalf("message count = %d, want user and two system messages: %s", got, first)
+	assertClaudeMessageRoles(t, first, "user", "system", "system", "assistant", "user")
+	assertClaudeMidConversationSystemMessage(t, first, 1, "first guidance", "")
+	assertClaudeMidConversationSystemMessage(t, first, 2, "second guidance", "")
+}
+
+// Caller instructions sit ahead of the per-conversation first turn, so two
+// conversations send identical bytes through the instructions' breakpoint and
+// the second reads them from the cache.
+func TestInsertClaudeMidConversationSystemMessages_SharesPrefixAcrossConversations(t *testing.T) {
+	system := gjson.Parse(`[{"type":"text","text":"stable rules","cache_control":{"type":"ephemeral"}},{"type":"text","text":"session=a"}]`)
+	conversationA := []byte(`{"messages":[{"role":"user","content":"guest A asks about parking"}]}`)
+	conversationB := []byte(`{"messages":[{"role":"user","content":"guest B asks about wifi"}]}`)
+
+	outA := insertClaudeMidConversationSystemMessages(conversationA, collectForwardedClaudeSystemPromptParts(system), "2026-11-18")
+	outB := insertClaudeMidConversationSystemMessages(conversationB, collectForwardedClaudeSystemPromptParts(system), "2026-11-18")
+	for _, idx := range []int{0, 1} {
+		path := fmt.Sprintf("messages.%d", idx)
+		if a, b := gjson.GetBytes(outA, path).Raw, gjson.GetBytes(outB, path).Raw; a != b {
+			t.Fatalf("%s differs between conversations:\nA: %s\nB: %s", path, a, b)
+		}
 	}
-	assertClaudeMidConversationSystemMessage(t, first, 1, texts[0], "")
-	assertClaudeMidConversationSystemMessage(t, first, 2, texts[1], "")
+	if !gjson.GetBytes(outA, "messages.1.content.0.cache_control").Exists() {
+		t.Fatalf("caller-marked block lost its breakpoint: %s", outA)
+	}
+	if gjson.GetBytes(outA, "messages.2.content.0.cache_control").Exists() {
+		t.Fatalf("unmarked dynamic block got a breakpoint: %s", outA)
+	}
+}
+
+func TestEnforceCacheControlLimit_KeepsSystemTurnBreakpointsLongest(t *testing.T) {
+	payload := []byte(`{"system":[{"type":"text","text":"identity","cache_control":{"type":"ephemeral"}}],"messages":[` +
+		`{"role":"user","content":[{"type":"text","text":"date"}]},` +
+		`{"role":"system","content":[{"type":"text","text":"rules","cache_control":{"type":"ephemeral"}}]},` +
+		`{"role":"assistant","content":[{"type":"text","text":"Understood."}]},` +
+		`{"role":"user","content":[{"type":"text","text":"first","cache_control":{"type":"ephemeral"}}]},` +
+		`{"role":"assistant","content":[{"type":"tool_use","id":"t1","name":"x","input":{}}]},` +
+		`{"role":"user","content":[{"type":"tool_result","tool_use_id":"t1","content":"ok","cache_control":{"type":"ephemeral"}},{"type":"text","text":"next","cache_control":{"type":"ephemeral"}}]}` +
+		`]}`)
+
+	out := enforceCacheControlLimit(payload, 4)
+	if got := countCacheControls(out); got != 4 {
+		t.Fatalf("breakpoints = %d, want 4: %s", got, out)
+	}
+	if !gjson.GetBytes(out, "messages.1.content.0.cache_control").Exists() {
+		t.Fatalf("system turn breakpoint was trimmed before a user-turn one: %s", out)
+	}
+	if gjson.GetBytes(out, "messages.3.content.0.cache_control").Exists() {
+		t.Fatalf("earliest user-turn breakpoint should be trimmed first: %s", out)
+	}
+}
+
+func TestClaudeBillingFingerprintMessageText_SkipsReminderOnlyOpeningTurn(t *testing.T) {
+	payload := []byte(`{"messages":[{"role":"user","content":"guest question"}]}`)
+	before := claudeBillingFingerprintMessageText(payload)
+	after := insertClaudeMidConversationSystemMessages(payload, claudeTestSystemBlocks("rules"), "2026-11-18")
+	after = injectClaudeCodeCurrentDate(after, "2026-11-18")
+	if got := claudeBillingFingerprintMessageText(after); got != before || got != "guest question" {
+		t.Fatalf("fingerprint text = %q after relocation, want %q", got, before)
+	}
 }
 
 // TestClaudeCodeCLIBetas_MatchesObservedClientMatrix pins the Anthropic-Beta
