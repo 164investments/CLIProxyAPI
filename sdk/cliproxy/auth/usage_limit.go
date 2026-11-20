@@ -38,8 +38,19 @@ type accountUsageExhaustion struct {
 
 type usageExhaustion struct {
 	model    string
+	now      time.Time
 	total    int
 	accounts []accountUsageExhaustion
+}
+
+func (u usageExhaustion) earliestRecovery() time.Time {
+	var earliest time.Time
+	for _, account := range u.accounts {
+		if !account.recoverAt.IsZero() && (earliest.IsZero() || account.recoverAt.Before(earliest)) {
+			earliest = account.recoverAt
+		}
+	}
+	return earliest
 }
 
 type weeklySelection struct {
@@ -194,6 +205,14 @@ func (u usageExhaustion) decorate(err error) error {
 	case *modelCooldownError:
 		copyError := *e
 		copyError.usageDetails = detail
+		if e.usageRecoveryAt.IsZero() && !u.now.IsZero() {
+			if earliest := u.earliestRecovery(); !earliest.IsZero() && earliest.After(u.now) {
+				if usageWait := earliest.Sub(u.now); copyError.resetIn == 0 || usageWait < copyError.resetIn {
+					copyError.resetIn = usageWait
+					copyError.usageRecoveryAt = earliest
+				}
+			}
+		}
 		return &copyError
 	case *Error:
 		copyError := *e

@@ -211,6 +211,7 @@ type Manager struct {
 	weeklyLifecycleMu sync.Mutex
 	weeklyCancel      context.CancelFunc
 	weeklyDone        chan struct{}
+	claudeAutoReset   *claudeAutoResetState
 }
 
 // NewManager constructs a manager with optional custom selector and hook.
@@ -234,6 +235,7 @@ func NewManager(store Store, selector Selector, hook Hook) *Manager {
 		providerOffsets:       make(map[string]int),
 		modelPoolOffsets:      make(map[string]int),
 		weeklyQuota:           newWeeklyQuotaCache(),
+		claudeAutoReset:       newClaudeAutoResetState(),
 	}
 	manager.bindWeeklySelector(selector)
 	// atomic.Value requires non-nil initial value.

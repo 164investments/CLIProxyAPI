@@ -116,6 +116,32 @@ type ClaudeConfig struct {
 	// ModelLevelCooling scopes Claude quota cooldowns to the requested model
 	// rather than cooling down the entire credential across all sibling models.
 	ModelLevelCooling bool `yaml:"model-level-cooling" json:"model-level-cooling"`
+	// AutoResetEnabled allows claiming an available Anthropic cedar_ember
+	// usage reset on the furthest-reset Claude account when every candidate
+	// account is exhausted and none recovers within AutoResetMinWait.
+	AutoResetEnabled bool `yaml:"auto-reset-enabled" json:"auto-reset-enabled"`
+	// AutoResetMinWait is the minimum duration until the earliest candidate
+	// recovery before auto-reset may claim a reset (e.g. "3h"). Defaults to 3h
+	// when AutoResetEnabled is true and this value is empty or invalid.
+	AutoResetMinWait string `yaml:"auto-reset-min-wait,omitempty" json:"auto-reset-min-wait,omitempty"`
+}
+
+// DefaultClaudeAutoResetMinWait is the fallback wait threshold when
+// upstream.claude.auto-reset-enabled is true and auto-reset-min-wait is unset.
+const DefaultClaudeAutoResetMinWait = 3 * time.Hour
+
+// EffectiveAutoResetMinWait returns the configured minimum recovery wait
+// before claiming a Claude usage reset, defaulting to DefaultClaudeAutoResetMinWait.
+func (c ClaudeConfig) EffectiveAutoResetMinWait() time.Duration {
+	raw := strings.TrimSpace(c.AutoResetMinWait)
+	if raw == "" {
+		return DefaultClaudeAutoResetMinWait
+	}
+	parsed, err := time.ParseDuration(raw)
+	if err != nil || parsed <= 0 {
+		return DefaultClaudeAutoResetMinWait
+	}
+	return parsed
 }
 
 // ClaudeHeaderDefaults configures the measured Claude Code software baseline.

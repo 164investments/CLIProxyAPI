@@ -496,6 +496,7 @@ func (m *Manager) executeMixedOnce(ctx context.Context, providers []string, req 
 		}
 	}
 	attempted := make(map[string]struct{})
+	autoResetTried := false
 	var lastErr error
 	var upstreamErr error
 	for {
@@ -513,6 +514,13 @@ func (m *Manager) executeMixedOnce(ctx context.Context, providers []string, req 
 		}
 		auth, executor, provider, errPick := m.pickNextMixed(ctx, providers, routeModel, pickOpts, tried)
 		if errPick != nil {
+			if !homeMode && !autoResetTried && isAuthUnavailableError(errPick) {
+				autoResetTried = true
+				if resetAuthID, okReset := m.tryClaudeAutoReset(ctx, providers, routeModel, pickOpts); okReset {
+					delete(tried, resetAuthID)
+					continue
+				}
+			}
 			if shouldReturnLastErrorOnPickFailure(homeMode, lastErr, errPick) {
 				return cliproxyexecutor.Response{}, preferredExecutionAttemptError(lastErr, upstreamErr)
 			}
@@ -929,6 +937,7 @@ func (m *Manager) executeStreamMixedOnce(ctx context.Context, providers []string
 	lastHomeAuthID := ""
 	homeSameAuthRetryPending := false
 	attempted := make(map[string]struct{})
+	autoResetTried := false
 	var lastErr error
 	var upstreamErr error
 	var roundTiming homeRetryRoundTiming
@@ -967,6 +976,13 @@ func (m *Manager) executeStreamMixedOnce(ctx context.Context, providers []string
 			auth, executor, provider, errPick = m.pickNextMixed(ctx, providers, routeModel, pickOpts, tried)
 		}
 		if errPick != nil {
+			if !homeMode && !autoResetTried && isAuthUnavailableError(errPick) {
+				autoResetTried = true
+				if resetAuthID, okReset := m.tryClaudeAutoReset(ctx, providers, routeModel, pickOpts); okReset {
+					delete(tried, resetAuthID)
+					continue
+				}
+			}
 			preferredErr := preferredExecutionAttemptError(lastErr, upstreamErr)
 			var homeCooldown *homeDispatchRetryAfterError
 			if homeMode && lastErr != nil && errors.As(errPick, &homeCooldown) && homeCooldown != nil {

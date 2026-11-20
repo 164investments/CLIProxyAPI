@@ -242,7 +242,7 @@ func (s *WeeklyResetFirstSelector) reserved(auth *Auth, capacity weeklyCapacity)
 // Unknown capacity is unreserved. Like exhaustion, this runs before priority
 // tiers and session-affinity reuse, so a reserved bound thread rebinds.
 func (s *WeeklyResetFirstSelector) filter(auths []*Auth, model string, now time.Time) weeklySelection {
-	result := weeklySelection{usage: usageExhaustion{model: model}}
+	result := weeklySelection{usage: usageExhaustion{model: model, now: now}}
 	eligible := make([]*Auth, 0, len(auths))
 	models := make([]string, 0, len(auths))
 	reserved := make([]bool, 0, len(auths))

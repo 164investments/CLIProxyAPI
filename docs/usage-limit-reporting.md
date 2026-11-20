@@ -22,7 +22,7 @@ Scope labels are `account-wide`, `Sonnet`, `Opus`, `Fable`, or `scope unknown`. 
 
 When all considered accounts have exhausted observed usage and at least one account has a known recovery, the existing 429 `model_cooldown` response remains. `Retry-After`, `reset_at`, and the unified reset header keep their existing meanings.
 
-When other accounts have ordinary cooldowns, the message separates those cooldowns from observed exhaustion. Their usage windows remain unknown. The ordinary cooldown's existing retry timing, status, and upstream cause remain unchanged, even when shorter than the observed usage resets. The message also states the ordinary cooldown retry duration and labels quota dates as known usage resets.
+When other accounts have ordinary cooldowns, the message separates those cooldowns from observed exhaustion. Their usage windows remain unknown. When the ordinary cooldown is shorter than the observed usage resets, its existing retry timing, status, and upstream cause remain unchanged, and the message states the ordinary cooldown retry duration while labeling quota dates as known usage resets. When an observed usage reset is strictly earlier than the ordinary cooldown (or an upstream 429 from the last open account), `Retry-After`, `reset_at`, and the unified reset header use the earlier observed usage reset so clients do not sleep past an account that recovers sooner.
 
 If every recovery is unknown, the existing unavailable error remains. The report still includes known blocker details. It adds no retry or reset hint. Claude's existing unavailable handling returns 503.
 
