@@ -1011,8 +1011,8 @@ func (s *SessionAffinitySelector) Trees() *cliproxysession.InMemorySessionTreeSt
 func (s *SessionAffinitySelector) Pick(ctx context.Context, provider, model string, opts cliproxyexecutor.Options, auths []*Auth) (selected *Auth, selectionErr error) {
 	var usage usageExhaustion
 	defer func() { selectionErr = usage.decorate(selectionErr) }()
+	now := time.Now()
 	if weekly := weeklySelector(s.fallback); weekly != nil {
-		now := time.Now()
 		if weekly.Cache != nil {
 			now = weekly.Cache.nowFunc()
 		}
@@ -1064,7 +1064,6 @@ func (s *SessionAffinitySelector) Pick(ctx context.Context, provider, model stri
 			opts.Metadata[cliproxyexecutor.CanonicalSessionIDMetadataKey] = primaryID
 		}
 	}
-	now := time.Now()
 	availabilityCandidates := auths
 	if _, weighted := s.fallback.(*WeightedRoundRobinSelector); weighted {
 		availabilityCandidates = positiveWeightAuths(auths)

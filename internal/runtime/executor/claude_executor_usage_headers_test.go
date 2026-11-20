@@ -39,3 +39,21 @@ func TestClaudeUsageRequestUsesConfiguredSoftwareBaseline(t *testing.T) {
 		})
 	}
 }
+
+func TestClaudeResetRateLimitsRequestUsesConfiguredSoftwareBaseline(t *testing.T) {
+	exec := NewClaudeExecutor(&config.Config{})
+	auth := &cliproxyauth.Auth{Provider: "claude", Metadata: map[string]any{"access_token": "test-token"}}
+	req, err := http.NewRequest(http.MethodPost, "https://api.anthropic.com/api/organizations/org-123/reset_rate_limits", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = exec.PrepareRequest(req, auth); err != nil {
+		t.Fatal(err)
+	}
+	if got := req.Header.Get("User-Agent"); got != "claude-cli/2.1.325 (external, cli)" {
+		t.Fatalf("User-Agent = %q, want default claude-cli UA", got)
+	}
+	if got := req.Header.Get("Authorization"); got != "Bearer test-token" {
+		t.Fatalf("Authorization = %q, want Bearer test-token", got)
+	}
+}

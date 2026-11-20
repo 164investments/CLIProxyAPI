@@ -218,7 +218,7 @@ func (e *ClaudeExecutor) PrepareRequest(req *http.Request, auth *cliproxyauth.Au
 	apiKey, _ := claudeCreds(auth)
 	useAPIKey := auth != nil && (auth.AuthKind() == cliproxyauth.AuthKindAPIKey || (auth.Attributes != nil && strings.TrimSpace(auth.Attributes["api_key"]) != ""))
 	isAnthropicBase := isAnthropicUpstreamURL(req.URL)
-	if isAnthropicBase && !useAPIKey && req.URL.Path == "/api/oauth/usage" && req.Header.Get("User-Agent") == "" {
+	if isAnthropicBase && !useAPIKey && (req.URL.Path == "/api/oauth/usage" || isClaudeResetRateLimitsPath(req.URL.Path)) && req.Header.Get("User-Agent") == "" {
 		req.Header.Set("User-Agent", helps.DefaultClaudeUserAgent(e.cfg))
 	}
 	if strings.TrimSpace(apiKey) != "" {
@@ -239,6 +239,14 @@ func (e *ClaudeExecutor) PrepareRequest(req *http.Request, auth *cliproxyauth.Au
 	}
 	util.ApplyCustomHeadersFromAttrs(req, attrs)
 	return nil
+}
+
+func isClaudeResetRateLimitsPath(path string) bool {
+	if !strings.HasPrefix(path, "/api/organizations/") || !strings.HasSuffix(path, "/reset_rate_limits") {
+		return false
+	}
+	orgID := strings.TrimSuffix(strings.TrimPrefix(path, "/api/organizations/"), "/reset_rate_limits")
+	return orgID != "" && !strings.Contains(orgID, "/")
 }
 
 // HttpRequest injects Claude credentials into the request and executes it.

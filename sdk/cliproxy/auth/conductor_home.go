@@ -280,12 +280,27 @@ func isHomeRequestRetryExceededError(err error) bool {
 	return strings.EqualFold(strings.TrimSpace(authErr.Code), homeRequestRetryExceededErrorCode)
 }
 
+func pickErrorHasEarlierCooldown(lastErr error, errPick error) bool {
+	if lastErr == nil || errPick == nil {
+		return false
+	}
+	var pickCooldown *modelCooldownError
+	if !errors.As(errPick, &pickCooldown) || pickCooldown == nil || pickCooldown.resetIn <= 0 {
+		return false
+	}
+	lastRetry := retryAfterFromError(lastErr)
+	if lastRetry == nil || *lastRetry <= 0 {
+		return false
+	}
+	return pickCooldown.resetIn < *lastRetry
+}
+
 func shouldReturnLastErrorOnPickFailure(homeMode bool, lastErr error, errPick error) bool {
 	if lastErr == nil {
 		return false
 	}
 	if !homeMode {
-		return true
+		return !pickErrorHasEarlierCooldown(lastErr, errPick)
 	}
 	if isHomeRequestRetryExceededError(errPick) {
 		return true
